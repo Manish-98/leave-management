@@ -40,7 +40,7 @@ clean:
 
 # Docker commands
 docker-build:
-	docker build -t leave-management:latest .
+	docker build -t leave-management-app:latest .
 
 docker-run:
 	docker-compose up -d

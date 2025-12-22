@@ -3,7 +3,7 @@ package one.june.leave_management;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "one.june.leave_management")
 public class LeaveManagementApplication {
 
 	public static void main(String[] args) {
