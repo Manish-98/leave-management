@@ -8,6 +8,7 @@ import one.june.leave_management.application.leave.command.LeaveIngestionCommand
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.dto.LeaveSourceRefDto;
 import one.june.leave_management.domain.leave.model.Leave;
+import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveSourceRef;
 import one.june.leave_management.domain.leave.model.SourceType;
 import org.springframework.stereotype.Component;
@@ -35,6 +36,7 @@ public class LeaveMapper {
                 .endDate(leave.getEndDate())
                 .type(leave.getType())
                 .status(leave.getStatus())
+                .durationType(leave.getDurationType() != null ? leave.getDurationType() : LeaveDurationType.FULL_DAY)
                 .build();
     }
 
@@ -54,6 +56,7 @@ public class LeaveMapper {
                 .dateRange(dateRange)
                 .type(jpaEntity.getType())
                 .status(jpaEntity.getStatus())
+                .durationType(jpaEntity.getDurationType())
                 .build();
 
         // Map source references
@@ -80,6 +83,7 @@ public class LeaveMapper {
                 .dateRange(leave.getDateRange())
                 .type(leave.getType())
                 .status(leave.getStatus())
+                .durationType(leave.getDurationType())
                 .sourceRefs(sourceRefDtos)
                 .build();
     }
@@ -95,6 +99,7 @@ public class LeaveMapper {
                 .dateRange(dto.getDateRange())
                 .type(dto.getType())
                 .status(dto.getStatus())
+                .durationType(dto.getDurationType())
                 .build();
 
         if (dto.getSourceRefs() != null) {
@@ -117,6 +122,7 @@ public class LeaveMapper {
                 .dateRange(request.getDateRange())
                 .type(request.getType())
                 .status(request.getStatus())
+                .durationType(request.getDurationType())
                 .build();
     }
 
@@ -132,6 +138,7 @@ public class LeaveMapper {
                 .dateRange(domain.getDateRange())
                 .type(domain.getType())
                 .status(domain.getStatus())
+                .durationType(domain.getDurationType())
                 .build();
     }
 
@@ -199,6 +206,7 @@ public class LeaveMapper {
                 .dateRange(request.getDateRange())
                 .type(request.getType())
                 .status(request.getStatus())
+                .durationType(request.getDurationType())
                 .build();
     }
 }

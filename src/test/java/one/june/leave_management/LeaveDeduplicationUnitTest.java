@@ -14,15 +14,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class LeaveDeduplicationUnitTest {
@@ -91,7 +92,7 @@ class LeaveDeduplicationUnitTest {
                 .build();
 
         when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange)))
-                .thenReturn(Arrays.asList(existingLeave));
+                .thenReturn(Collections.singletonList(existingLeave));
 
         // When & Then
         OverlappingLeaveException exception = assertThrows(
@@ -159,7 +160,7 @@ class LeaveDeduplicationUnitTest {
                 .build();
 
         when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange), eq(TEST_LEAVE_ID_1)))
-                .thenReturn(Arrays.asList(otherExistingLeave));
+                .thenReturn(Collections.singletonList(otherExistingLeave));
 
         // When & Then
         OverlappingLeaveException exception = assertThrows(

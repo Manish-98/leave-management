@@ -6,7 +6,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
 
@@ -29,7 +28,7 @@ public class DateRange {
     /**
      * Returns the duration of this date range in days
      */
-    public long getDurationInDays() {
+    public long toDays() {
         if (startDate == null || endDate == null) {
             return 0;
         }

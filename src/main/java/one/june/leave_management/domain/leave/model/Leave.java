@@ -26,6 +26,8 @@ public class Leave {
     private DateRange dateRange;
     private LeaveType type;
     private LeaveStatus status;
+    @Builder.Default
+    private LeaveDurationType durationType = LeaveDurationType.FULL_DAY;
     @ToString.Exclude
     @Builder.Default
     private List<LeaveSourceRef> sourceRefs = new ArrayList<>();
@@ -43,13 +45,15 @@ public class Leave {
                 .endDate(endDate)
                 .build();
 
-        return Leave.builder()
+        Leave leave = Leave.builder()
                 .userId(userId)
                 .dateRange(dateRange)
                 .type(type)
                 .status(status)
                 .sourceRefs(new ArrayList<>())
                 .build();
+        leave.validate();
+        return leave;
     }
 
     public void addSourceRef(LeaveSourceRef sourceRef) {
@@ -70,11 +74,10 @@ public class Leave {
     public void update(String userId, LocalDate startDate, LocalDate endDate, LeaveType type, LeaveStatus status) {
         this.userId = Objects.requireNonNull(userId, "userId cannot be null");
 
-        DateRange dateRange = DateRange.builder()
+        this.dateRange = DateRange.builder()
                 .startDate(Objects.requireNonNull(startDate, "startDate cannot be null"))
                 .endDate(Objects.requireNonNull(endDate, "endDate cannot be null"))
                 .build();
-        this.dateRange = dateRange;
 
         this.type = Objects.requireNonNull(type, "type cannot be null");
         this.status = Objects.requireNonNull(status, "status cannot be null");
@@ -101,13 +104,20 @@ public class Leave {
         this.sourceRefs = sourceRefs != null ? new ArrayList<>(sourceRefs) : new ArrayList<>();
     }
 
-    // Post-build validation hook
-    private void validate() {
+    // Validation method - can be called explicitly
+    void validate() {
         if (dateRange != null) {
             LocalDate startDate = dateRange.getStartDate();
             LocalDate endDate = dateRange.getEndDate();
             if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
                 throw new IllegalArgumentException("startDate cannot be after endDate");
+            }
+
+            // Validate half-day leaves
+            if (durationType != null && durationType != LeaveDurationType.FULL_DAY) {
+                if (startDate == null || endDate == null || !startDate.equals(endDate)) {
+                    throw new IllegalArgumentException("Half-day leaves must have the same start and end date");
+                }
             }
         }
     }

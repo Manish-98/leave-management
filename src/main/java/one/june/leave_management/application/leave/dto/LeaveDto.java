@@ -1,6 +1,7 @@
 package one.june.leave_management.application.leave.dto;
 
 import one.june.leave_management.common.model.DateRange;
+import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
 
@@ -27,6 +28,8 @@ public class LeaveDto {
     private DateRange dateRange;
     private LeaveType type;
     private LeaveStatus status;
+    @Builder.Default
+    private LeaveDurationType durationType = LeaveDurationType.FULL_DAY;
     private List<LeaveSourceRefDto> sourceRefs;
 
     // Convenience getters for backward compatibility
@@ -36,5 +39,18 @@ public class LeaveDto {
 
     public LocalDate getEndDate() {
         return dateRange != null ? dateRange.getEndDate() : null;
+    }
+
+    public double getDurationInDays() {
+        if (dateRange == null) {
+            return 0;
+        }
+
+        if (durationType == LeaveDurationType.FULL_DAY) {
+            return dateRange.toDays();
+        } else {
+            // Half day leaves (FIRST_HALF or SECOND_HALF)
+            return 0.5;
+        }
     }
 }

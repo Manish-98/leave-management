@@ -1,5 +1,6 @@
 package one.june.leave_management.adapter.persistence.jpa.entity;
 
+import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
 
@@ -48,6 +49,11 @@ public class LeaveJpaEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private LeaveStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "duration_type", nullable = false)
+    @Builder.Default
+    private LeaveDurationType durationType = LeaveDurationType.FULL_DAY;
 
     @OneToMany(mappedBy = "leave", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @ToString.Exclude

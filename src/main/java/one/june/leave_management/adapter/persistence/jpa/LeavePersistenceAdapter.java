@@ -68,6 +68,7 @@ public class LeavePersistenceAdapter implements LeaveRepository {
             existingEntity.setEndDate(leave.getEndDate());
             existingEntity.setType(leave.getType());
             existingEntity.setStatus(leave.getStatus());
+            existingEntity.setDurationType(leave.getDurationType());
             jpaEntity = existingEntity;
         }
 

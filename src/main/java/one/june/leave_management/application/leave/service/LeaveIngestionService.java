@@ -66,6 +66,7 @@ public class LeaveIngestionService {
                 .dateRange(command.getDateRange())
                 .type(command.getType())
                 .status(command.getStatus())
+                .durationType(command.getDurationType())
                 .build();
     }
 

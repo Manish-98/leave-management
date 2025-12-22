@@ -90,7 +90,7 @@ class DateRangeTest {
                 .endDate(endDate)
                 .build();
 
-        assertEquals(3, dateRange.getDurationInDays());
+        assertEquals(3, dateRange.toDays());
     }
 
     @Test
@@ -101,7 +101,7 @@ class DateRangeTest {
                 .endDate(date)
                 .build();
 
-        assertEquals(1, dateRange.getDurationInDays());
+        assertEquals(1, dateRange.toDays());
     }
 
     @Test
@@ -116,8 +116,8 @@ class DateRangeTest {
                 .endDate(null)
                 .build();
 
-        assertEquals(0, dateRange1.getDurationInDays());
-        assertEquals(0, dateRange2.getDurationInDays());
+        assertEquals(0, dateRange1.toDays());
+        assertEquals(0, dateRange2.toDays());
     }
 
     @Test

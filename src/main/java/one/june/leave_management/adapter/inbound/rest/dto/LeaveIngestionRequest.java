@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import one.june.leave_management.common.model.DateRange;
+import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
 import one.june.leave_management.domain.leave.model.SourceType;
@@ -46,4 +47,7 @@ public class LeaveIngestionRequest {
 
     @NotNull(message = "Leave status is required")
     private LeaveStatus status;
+
+    @Builder.Default
+    private LeaveDurationType durationType = LeaveDurationType.FULL_DAY;
 }

@@ -2,6 +2,7 @@ package one.june.leave_management.domain.leave.service;
 
 import one.june.leave_management.common.exception.OverlappingLeaveException;
 import one.june.leave_management.domain.leave.model.Leave;
+import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
 import org.slf4j.Logger;
@@ -35,6 +36,17 @@ public class LeaveDomainService {
 
         if (leave.getType() == null) {
             throw new IllegalArgumentException("Leave type cannot be null");
+        }
+
+        if (leave.getDurationType() == null) {
+            throw new IllegalArgumentException("Leave duration type cannot be null");
+        }
+
+        // Validate half-day leaves
+        if (leave.getDurationType() != LeaveDurationType.FULL_DAY) {
+            if (!leave.getStartDate().equals(leave.getEndDate())) {
+                throw new IllegalArgumentException("Half-day leaves must have the same start and end date");
+            }
         }
 
         // Additional business validations can be added here
