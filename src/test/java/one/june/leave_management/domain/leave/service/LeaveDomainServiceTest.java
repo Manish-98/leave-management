@@ -1,12 +1,12 @@
-package one.june.leave_management;
+package one.june.leave_management.domain.leave.service;
 
 import one.june.leave_management.common.exception.OverlappingLeaveException;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.Leave;
+import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
-import one.june.leave_management.domain.leave.service.LeaveDomainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,16 +17,14 @@ import java.time.LocalDate;
 import java.util.Collections;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class LeaveDeduplicationUnitTest {
+class LeaveDomainServiceTest {
 
     @Mock
     private LeaveRepository leaveRepository;
@@ -42,9 +40,10 @@ class LeaveDeduplicationUnitTest {
         leaveDomainService = new LeaveDomainService(leaveRepository);
     }
 
+    // validateNoOverlappingLeaves tests
+
     @Test
     void shouldAllowLeaveWhenNoOverlappingLeavesExist() {
-        // Given
         DateRange dateRange = DateRange.builder()
                 .startDate(LocalDate.now().plusDays(10))
                 .endDate(LocalDate.now().plusDays(12))
@@ -60,14 +59,12 @@ class LeaveDeduplicationUnitTest {
         when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange)))
                 .thenReturn(Collections.emptyList());
 
-        // When & Then
         assertDoesNotThrow(() -> leaveDomainService.validateNoOverlappingLeaves(leave));
         verify(leaveRepository).findOverlappingLeaves(TEST_USER_ID, dateRange);
     }
 
     @Test
     void shouldRejectLeaveWhenOverlappingLeaveExists() {
-        // Given
         DateRange dateRange = DateRange.builder()
                 .startDate(LocalDate.now().plusDays(10))
                 .endDate(LocalDate.now().plusDays(12))
@@ -94,7 +91,6 @@ class LeaveDeduplicationUnitTest {
         when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange)))
                 .thenReturn(Collections.singletonList(existingLeave));
 
-        // When & Then
         OverlappingLeaveException exception = assertThrows(
                 OverlappingLeaveException.class,
                 () -> leaveDomainService.validateNoOverlappingLeaves(newLeave)
@@ -109,7 +105,6 @@ class LeaveDeduplicationUnitTest {
 
     @Test
     void shouldAllowLeaveUpdateWhenOnlySameLeaveExists() {
-        // Given
         DateRange dateRange = DateRange.builder()
                 .startDate(LocalDate.now().plusDays(10))
                 .endDate(LocalDate.now().plusDays(12))
@@ -123,18 +118,15 @@ class LeaveDeduplicationUnitTest {
                 .status(LeaveStatus.REQUESTED)
                 .build();
 
-        // Updating the same leave (same ID)
         when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange), eq(TEST_LEAVE_ID_1)))
                 .thenReturn(Collections.emptyList());
 
-        // When & Then
         assertDoesNotThrow(() -> leaveDomainService.validateNoOverlappingLeaves(existingLeave));
         verify(leaveRepository).findOverlappingLeaves(TEST_USER_ID, dateRange, TEST_LEAVE_ID_1);
     }
 
     @Test
     void shouldRejectLeaveUpdateWhenOtherOverlappingLeaveExists() {
-        // Given
         DateRange dateRange = DateRange.builder()
                 .startDate(LocalDate.now().plusDays(10))
                 .endDate(LocalDate.now().plusDays(12))
@@ -162,7 +154,6 @@ class LeaveDeduplicationUnitTest {
         when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange), eq(TEST_LEAVE_ID_1)))
                 .thenReturn(Collections.singletonList(otherExistingLeave));
 
-        // When & Then
         OverlappingLeaveException exception = assertThrows(
                 OverlappingLeaveException.class,
                 () -> leaveDomainService.validateNoOverlappingLeaves(updatingLeave)
@@ -177,7 +168,6 @@ class LeaveDeduplicationUnitTest {
 
     @Test
     void shouldRejectLeaveWhenNullLeaveIsProvided() {
-        // When & Then
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> leaveDomainService.validateNoOverlappingLeaves(null)
@@ -187,9 +177,10 @@ class LeaveDeduplicationUnitTest {
         verifyNoInteractions(leaveRepository);
     }
 
+    // validateLeaveForPersistence tests
+
     @Test
-    void shouldValidateLeaveForPersistenceAndDeduplicationDirectly() {
-        // Given
+    void shouldValidateLeaveForPersistence() {
         DateRange dateRange = DateRange.builder()
                 .startDate(LocalDate.now().plusDays(10))
                 .endDate(LocalDate.now().plusDays(12))
@@ -201,34 +192,185 @@ class LeaveDeduplicationUnitTest {
                 .dateRange(dateRange)
                 .type(LeaveType.ANNUAL_LEAVE)
                 .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
                 .build();
 
-        // Mock the repository method that will be called for deduplication
-        when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange), eq(TEST_LEAVE_ID_1)))
-                .thenReturn(Collections.emptyList());
-
-        // When & Then - Call both methods directly as they would be in the service
-        assertDoesNotThrow(() -> {
-            leaveDomainService.validateLeaveForPersistence(leave);
-            leaveDomainService.validateNoOverlappingLeaves(leave);
-        });
-
-        // Verify that deduplication validation is called
-        verify(leaveRepository).findOverlappingLeaves(TEST_USER_ID, dateRange, TEST_LEAVE_ID_1);
+        assertDoesNotThrow(() -> leaveDomainService.validateLeaveForPersistence(leave));
     }
 
     @Test
-    void shouldFailDeduplicationValidationWhenLeaveIsNull() {
-        // When & Then
+    void shouldRejectNullLeaveForPersistence() {
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
-                () -> {
-                    leaveDomainService.validateLeaveForPersistence(null);
-                    leaveDomainService.validateNoOverlappingLeaves(null);
-                }
+                () -> leaveDomainService.validateLeaveForPersistence(null)
         );
 
         assertEquals("Leave cannot be null", exception.getMessage());
         verifyNoInteractions(leaveRepository);
+    }
+
+    @Test
+    void shouldRejectNewLeaveWithoutSourceRefs() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(10))
+                .endDate(LocalDate.now().plusDays(12))
+                .build();
+
+        Leave leave = Leave.builder()
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> leaveDomainService.validateLeaveForPersistence(leave)
+        );
+
+        assertEquals("New leaves must have at least one source reference", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectLeaveWithNullStatus() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(10))
+                .endDate(LocalDate.now().plusDays(12))
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(null)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> leaveDomainService.validateLeaveForPersistence(leave)
+        );
+
+        assertEquals("Leave status cannot be null", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectLeaveWithNullType() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(10))
+                .endDate(LocalDate.now().plusDays(12))
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(null)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> leaveDomainService.validateLeaveForPersistence(leave)
+        );
+
+        assertEquals("Leave type cannot be null", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectLeaveWithNullDurationType() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(10))
+                .endDate(LocalDate.now().plusDays(12))
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(null)
+                .build();
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> leaveDomainService.validateLeaveForPersistence(leave)
+        );
+
+        assertEquals("Leave duration type cannot be null", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectHalfDayLeaveWithDifferentDates() {
+        LocalDate startDate = LocalDate.now().plusDays(10);
+        LocalDate endDate = LocalDate.now().plusDays(12);
+        DateRange dateRange = DateRange.builder()
+                .startDate(startDate)
+                .endDate(endDate)
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FIRST_HALF)
+                .build();
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> leaveDomainService.validateLeaveForPersistence(leave)
+        );
+
+        assertEquals("Half-day leaves must have the same start and end date", exception.getMessage());
+    }
+
+    @Test
+    void shouldAcceptHalfDayLeaveWithSameDate() {
+        LocalDate date = LocalDate.now().plusDays(10);
+        DateRange dateRange = DateRange.builder()
+                .startDate(date)
+                .endDate(date)
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.SECOND_HALF)
+                .build();
+
+        assertDoesNotThrow(() -> leaveDomainService.validateLeaveForPersistence(leave));
+    }
+
+    @Test
+    void shouldRejectApprovedLeaveWithInvalidDates() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(12))
+                .endDate(LocalDate.now().plusDays(10))
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.APPROVED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> leaveDomainService.validateLeaveForPersistence(leave)
+        );
+
+        assertEquals("Approved leaves must be at least 1 day long", exception.getMessage());
     }
 }

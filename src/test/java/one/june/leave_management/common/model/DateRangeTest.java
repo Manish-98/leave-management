@@ -1,6 +1,5 @@
-package one.june.leave_management;
+package one.june.leave_management.common.model;
 
-import one.june.leave_management.common.model.DateRange;
 import org.junit.jupiter.api.Test;
 
 import jakarta.validation.ConstraintViolation;
@@ -82,7 +81,7 @@ class DateRangeTest {
     }
 
     @Test
-    void getDurationInDaysShouldCalculateCorrectly() {
+    void toDaysShouldCalculateCorrectly() {
         LocalDate startDate = LocalDate.now().plusDays(1);
         LocalDate endDate = LocalDate.now().plusDays(3);
         DateRange dateRange = DateRange.builder()
@@ -94,7 +93,7 @@ class DateRangeTest {
     }
 
     @Test
-    void getDurationInDaysForSingleDayShouldReturnOne() {
+    void toDaysForSingleDayShouldReturnOne() {
         LocalDate date = LocalDate.now().plusDays(1);
         DateRange dateRange = DateRange.builder()
                 .startDate(date)
@@ -105,7 +104,7 @@ class DateRangeTest {
     }
 
     @Test
-    void getDurationInDaysWithNullDatesShouldReturnZero() {
+    void toDaysWithNullDatesShouldReturnZero() {
         DateRange dateRange1 = DateRange.builder()
                 .startDate(null)
                 .endDate(LocalDate.now().plusDays(3))
@@ -166,6 +165,21 @@ class DateRangeTest {
     }
 
     @Test
+    void overlapsWithShouldDetectAdjacentRanges() {
+        DateRange range1 = DateRange.builder()
+                .startDate(LocalDate.of(2024, 1, 1))
+                .endDate(LocalDate.of(2024, 1, 5))
+                .build();
+
+        DateRange adjacentRange = DateRange.builder()
+                .startDate(LocalDate.of(2024, 1, 6))
+                .endDate(LocalDate.of(2024, 1, 10))
+                .build();
+
+        assertFalse(range1.overlapsWith(adjacentRange));
+    }
+
+    @Test
     void overlapsWithNullShouldReturnFalse() {
         DateRange dateRange = DateRange.builder()
                 .startDate(LocalDate.now().plusDays(1))
@@ -173,5 +187,36 @@ class DateRangeTest {
                 .build();
 
         assertFalse(dateRange.overlapsWith(null));
+    }
+
+    @Test
+    void overlapsWithShouldReturnTrueForSameDates() {
+        DateRange range1 = DateRange.builder()
+                .startDate(LocalDate.of(2024, 1, 1))
+                .endDate(LocalDate.of(2024, 1, 5))
+                .build();
+
+        DateRange range2 = DateRange.builder()
+                .startDate(LocalDate.of(2024, 1, 1))
+                .endDate(LocalDate.of(2024, 1, 5))
+                .build();
+
+        assertTrue(range1.overlapsWith(range2));
+    }
+
+    @Test
+    void overlapsWithShouldReturnTrueForContainedRange() {
+        DateRange range1 = DateRange.builder()
+                .startDate(LocalDate.of(2024, 1, 1))
+                .endDate(LocalDate.of(2024, 1, 10))
+                .build();
+
+        DateRange containedRange = DateRange.builder()
+                .startDate(LocalDate.of(2024, 1, 3))
+                .endDate(LocalDate.of(2024, 1, 7))
+                .build();
+
+        assertTrue(range1.overlapsWith(containedRange));
+        assertTrue(containedRange.overlapsWith(range1));
     }
 }

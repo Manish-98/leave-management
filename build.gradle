@@ -37,6 +37,7 @@ dependencies {
 	runtimeOnly 'org.postgresql:postgresql'
 	// Test database
 	testImplementation 'com.h2database:h2'  // In-memory database for testing
+	testImplementation 'org.springframework.boot:spring-boot-starter-test' // Includes @WebMvcTest, @MockBean, etc.
 	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'

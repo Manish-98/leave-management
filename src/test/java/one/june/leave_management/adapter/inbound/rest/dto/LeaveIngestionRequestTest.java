@@ -1,6 +1,5 @@
-package one.june.leave_management;
+package one.june.leave_management.adapter.inbound.rest.dto;
 
-import one.june.leave_management.adapter.inbound.rest.dto.LeaveIngestionRequest;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
@@ -16,7 +15,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class LeaveIngestionRequestValidationTest {
+class LeaveIngestionRequestTest {
 
     private final ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
     private final Validator validator = factory.getValidator();
@@ -171,5 +170,95 @@ class LeaveIngestionRequestValidationTest {
         assertTrue(violations.stream()
                 .anyMatch(v -> v.getPropertyPath().toString().equals("userId") &&
                         v.getMessage().equals("User ID is required")));
+    }
+
+    @Test
+    void validRequestWithAllSourceTypes() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(1))
+                .endDate(LocalDate.now().plusDays(3))
+                .build();
+
+        for (SourceType sourceType : SourceType.values()) {
+            LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                    .sourceType(sourceType)
+                    .sourceId("source-123")
+                    .userId("user-456")
+                    .dateRange(dateRange)
+                    .type(LeaveType.ANNUAL_LEAVE)
+                    .status(LeaveStatus.REQUESTED)
+                    .build();
+
+            Set<ConstraintViolation<LeaveIngestionRequest>> violations = validator.validate(request);
+            assertTrue(violations.isEmpty(), "Request with source type " + sourceType + " should be valid");
+        }
+    }
+
+    @Test
+    void validRequestWithAllLeaveTypes() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(1))
+                .endDate(LocalDate.now().plusDays(3))
+                .build();
+
+        for (LeaveType leaveType : LeaveType.values()) {
+            LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                    .sourceType(SourceType.WEB)
+                    .sourceId("source-123")
+                    .userId("user-456")
+                    .dateRange(dateRange)
+                    .type(leaveType)
+                    .status(LeaveStatus.REQUESTED)
+                    .build();
+
+            Set<ConstraintViolation<LeaveIngestionRequest>> violations = validator.validate(request);
+            assertTrue(violations.isEmpty(), "Request with leave type " + leaveType + " should be valid");
+        }
+    }
+
+    @Test
+    void validRequestWithAllLeaveStatuses() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(1))
+                .endDate(LocalDate.now().plusDays(3))
+                .build();
+
+        for (LeaveStatus leaveStatus : LeaveStatus.values()) {
+            LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                    .sourceType(SourceType.WEB)
+                    .sourceId("source-123")
+                    .userId("user-456")
+                    .dateRange(dateRange)
+                    .type(LeaveType.ANNUAL_LEAVE)
+                    .status(leaveStatus)
+                    .build();
+
+            Set<ConstraintViolation<LeaveIngestionRequest>> violations = validator.validate(request);
+            assertTrue(violations.isEmpty(), "Request with leave status " + leaveStatus + " should be valid");
+        }
+    }
+
+    @Test
+    void validRequestWithAllDurationTypes() {
+        DateRange dateRange = DateRange.builder()
+                .startDate(LocalDate.now().plusDays(1))
+                .endDate(LocalDate.now().plusDays(1))
+                .build();
+
+        for (one.june.leave_management.domain.leave.model.LeaveDurationType durationType :
+                one.june.leave_management.domain.leave.model.LeaveDurationType.values()) {
+            LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                    .sourceType(SourceType.WEB)
+                    .sourceId("source-123")
+                    .userId("user-456")
+                    .dateRange(dateRange)
+                    .type(LeaveType.ANNUAL_LEAVE)
+                    .status(LeaveStatus.REQUESTED)
+                    .durationType(durationType)
+                    .build();
+
+            Set<ConstraintViolation<LeaveIngestionRequest>> violations = validator.validate(request);
+            assertTrue(violations.isEmpty(), "Request with duration type " + durationType + " should be valid");
+        }
     }
 }
