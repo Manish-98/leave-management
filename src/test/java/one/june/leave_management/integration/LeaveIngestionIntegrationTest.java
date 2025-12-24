@@ -1,7 +1,7 @@
 package one.june.leave_management.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import one.june.leave_management.adapter.inbound.rest.dto.LeaveIngestionRequest;
+import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
@@ -17,12 +17,15 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -39,6 +42,9 @@ class LeaveIngestionIntegrationTest {
 
     @LocalServerPort
     private int port;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private String baseUrl;
     private RestTemplate restTemplate;
@@ -63,6 +69,30 @@ class LeaveIngestionIntegrationTest {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBasicAuth("test", "test");
         return new HttpEntity<>(request, headers);
+    }
+
+    /**
+     * Helper method to query leave from database
+     */
+    private Map<String, Object> getLeaveFromDatabase(String userId, String startDate, String endDate) {
+        String sql = """
+                SELECT id, user_id, start_date, end_date, type, status, duration_type
+                FROM leave
+                WHERE user_id = ? AND start_date = ? AND end_date = ?
+                """;
+        return jdbcTemplate.queryForMap(sql, userId, startDate, endDate);
+    }
+
+    /**
+     * Helper method to query all source references for a leave
+     */
+    private List<Map<String, Object>> getLeaveSourceRefsFromDatabase(String leaveId) {
+        String sql = """
+                SELECT source_id, source_type
+                FROM leave_source_ref
+                WHERE leave_id = ?
+                """;
+        return jdbcTemplate.queryForList(sql, leaveId);
     }
 
     @Test
@@ -92,6 +122,23 @@ class LeaveIngestionIntegrationTest {
         assertThat(responseBody).contains("\"durationType\":\"FULL_DAY\"");
         assertThat(responseBody).contains("\"sourceType\":\"WEB\"");
         assertThat(responseBody).contains("\"sourceId\":\"web-123\"");
+
+        // Database validation
+        Map<String, Object> leaveRecord = getLeaveFromDatabase("user-123", "2024-06-16", "2024-06-18");
+        assertThat(leaveRecord).isNotNull();
+        assertThat(leaveRecord.get("user_id")).isEqualTo("user-123");
+        assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 6, 16));
+        assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 6, 18));
+        assertThat(leaveRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
+        assertThat(leaveRecord.get("status")).isEqualTo("REQUESTED");
+        assertThat(leaveRecord.get("duration_type")).isEqualTo("FULL_DAY");
+
+        // Verify source reference
+        String leaveId = leaveRecord.get("id").toString();
+        List<Map<String, Object>> sourceRefs = getLeaveSourceRefsFromDatabase(leaveId);
+        assertThat(sourceRefs).hasSize(1);
+        assertThat(sourceRefs.get(0).get("source_id")).isEqualTo("web-123");
+        assertThat(sourceRefs.get(0).get("source_type")).isEqualTo("WEB");
     }
 
     @Test
@@ -121,6 +168,12 @@ class LeaveIngestionIntegrationTest {
         assertThat(matcher.find()).isTrue();
         String leaveId = matcher.group(1);
 
+        // Verify first creation in database
+        Map<String, Object> firstRecord = getLeaveFromDatabase("user-456", "2024-06-25", "2024-06-27");
+        assertThat(firstRecord).isNotNull();
+        assertThat(firstRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
+        assertThat(firstRecord.get("status")).isEqualTo("REQUESTED");
+
         // Second request with same sourceId - should update the existing leave
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
@@ -142,6 +195,20 @@ class LeaveIngestionIntegrationTest {
         assertThat(secondBody).contains("\"id\":\"" + leaveId + "\""); // Same ID
         assertThat(secondBody).contains("\"type\":\"OPTIONAL_HOLIDAY\"");
         assertThat(secondBody).contains("\"status\":\"APPROVED\"");
+
+        // Verify update in database - same leave ID but updated values
+        Map<String, Object> updatedRecord = getLeaveFromDatabase("user-456", "2024-07-05", "2024-07-10");
+        assertThat(updatedRecord).isNotNull();
+        assertThat(updatedRecord.get("id").toString()).isEqualTo(leaveId); // Same ID
+        assertThat(updatedRecord.get("type")).isEqualTo("OPTIONAL_HOLIDAY");
+        assertThat(updatedRecord.get("status")).isEqualTo("APPROVED");
+        assertThat(((java.sql.Date) updatedRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 5));
+        assertThat(((java.sql.Date) updatedRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 10));
+
+        // Verify only one source reference exists (not created a new one)
+        List<Map<String, Object>> sourceRefs = getLeaveSourceRefsFromDatabase(leaveId);
+        assertThat(sourceRefs).hasSize(1);
+        assertThat(sourceRefs.get(0).get("source_id")).isEqualTo("web-update-test");
     }
 
     @Test

@@ -1,4 +1,4 @@
-package one.june.leave_management.adapter.inbound.rest.dto;
+package one.june.leave_management.adapter.inbound.web.dto;
 
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveStatus;

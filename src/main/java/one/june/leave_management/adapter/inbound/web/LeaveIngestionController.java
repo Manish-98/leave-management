@@ -1,7 +1,7 @@
-package one.june.leave_management.adapter.inbound.rest;
+package one.june.leave_management.adapter.inbound.web;
 
 import jakarta.validation.Valid;
-import one.june.leave_management.adapter.inbound.rest.dto.LeaveIngestionRequest;
+import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveIngestionService;

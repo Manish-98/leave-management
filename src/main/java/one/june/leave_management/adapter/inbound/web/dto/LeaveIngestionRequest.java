@@ -1,4 +1,4 @@
-package one.june.leave_management.adapter.inbound.rest.dto;
+package one.june.leave_management.adapter.inbound.web.dto;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;

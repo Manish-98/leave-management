@@ -1,6 +1,6 @@
 package one.june.leave_management.common.mapper;
 
-import one.june.leave_management.adapter.inbound.rest.dto.LeaveIngestionRequest;
+import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.adapter.persistence.jpa.entity.LeaveJpaEntity;
 import one.june.leave_management.adapter.persistence.jpa.entity.LeaveSourceRefJpaEntity;
