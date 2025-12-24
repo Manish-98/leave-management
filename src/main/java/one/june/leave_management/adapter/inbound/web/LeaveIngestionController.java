@@ -5,6 +5,7 @@ import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveIngestionService;
+import one.june.leave_management.common.annotation.Auditable;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,7 @@ public class LeaveIngestionController {
     }
 
     @PostMapping("/ingest")
+    @Auditable("Leave ingestion endpoint")
     public ResponseEntity<LeaveDto> ingestLeave(@Valid @RequestBody LeaveIngestionRequest request) {
         logger.info("Received leave ingestion request: {}", request);
         LeaveIngestionCommand command = leaveMapper.toCommand(request, request.getSourceType(), request.getSourceId());

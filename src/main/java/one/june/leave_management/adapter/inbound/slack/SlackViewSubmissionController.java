@@ -10,6 +10,7 @@ import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveIngestionService;
+import one.june.leave_management.common.annotation.Auditable;
 import one.june.leave_management.common.exception.SlackSignatureVerificationException;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.common.model.DateRange;
@@ -73,6 +74,7 @@ public class SlackViewSubmissionController {
      * @return ResponseEntity with empty body (Slack expects empty response for view_submission)
      */
     @PostMapping("/views")
+    @Auditable("Slack view submission endpoint")
     public ResponseEntity<?> handleViewSubmission(
             HttpServletRequest request,
             @RequestBody byte[] rawBody

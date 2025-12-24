@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackCommandRequest;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackCommandResponse;
 import one.june.leave_management.adapter.inbound.slack.util.SlackRequestSignatureVerifier;
+import one.june.leave_management.common.annotation.Auditable;
 import one.june.leave_management.common.exception.SlackSignatureVerificationException;
 import one.june.leave_management.application.leave.service.SlackModalService;
 import one.june.leave_management.config.SlackProperties;
@@ -63,6 +64,7 @@ public class SlackCommandController {
      * @return ResponseEntity with empty body to ACK the request
      */
     @PostMapping("/leave")
+    @Auditable("Slack command endpoint")
     public ResponseEntity<SlackCommandResponse> handleLeaveCommand(HttpServletRequest request, @RequestBody byte[] rawBody) {
         try {
             String requestBody = new String(rawBody, StandardCharsets.UTF_8);
