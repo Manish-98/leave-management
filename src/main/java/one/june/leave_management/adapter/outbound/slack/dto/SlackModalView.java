@@ -39,6 +39,12 @@ public class SlackModalView {
     private SlackText title;
 
     /**
+     * Indicates if Slack should send notification when modal is closed
+     */
+    @JsonProperty("notify_on_close")
+    private Boolean notifyOnClose;
+
+    /**
      * A collection of blocks that define the modal content
      */
     @JsonProperty("blocks")

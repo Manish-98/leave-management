@@ -7,7 +7,9 @@ import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.Slac
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackRadioButtonsElement;
 import one.june.leave_management.adapter.outbound.slack.dto.composition.SlackText;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Fluent builder for creating Slack blocks
@@ -115,5 +117,124 @@ public class SlackBlockBuilder {
                         .build())
                 .optional(optional)
                 .build();
+    }
+
+    // ========== Message Block Methods ==========
+
+    /**
+     * Creates a header block for messages
+     * <p>
+     * Header blocks display text in a bold, larger format.
+     * Used for titles and section headers in messages.
+     *
+     * @param text  The header text content
+     * @param emoji Whether to allow emoji in the text
+     * @return A map representing the header block structure
+     */
+    public static Map<String, Object> headerBlock(String text, boolean emoji) {
+        Map<String, Object> block = new HashMap<>();
+        block.put("type", "header");
+
+        Map<String, Object> textObj = new HashMap<>();
+        textObj.put("type", "plain_text");
+        textObj.put("text", text);
+        textObj.put("emoji", emoji);
+
+        block.put("text", textObj);
+        return block;
+    }
+
+    /**
+     * Creates a section block with markdown text
+     * <p>
+     * Section blocks are the most common block type, used to display
+     * text content with markdown formatting.
+     *
+     * @param markdownText The markdown-formatted text content
+     * @return A map representing the section block structure
+     */
+    public static Map<String, Object> sectionBlock(String markdownText) {
+        Map<String, Object> block = new HashMap<>();
+        block.put("type", "section");
+
+        Map<String, String> textObj = new HashMap<>();
+        textObj.put("type", "mrkdwn");
+        textObj.put("text", markdownText);
+
+        block.put("text", textObj);
+        return block;
+    }
+
+    /**
+     * Creates a section block with a label and value
+     * <p>
+     * Convenience method for creating key-value pairs in markdown format.
+     *
+     * @param label The field label (will be bold)
+     * @param value The field value
+     * @return A map representing the section block structure
+     */
+    public static Map<String, Object> sectionBlock(String label, String value) {
+        return sectionBlock(String.format("*%s:* %s", label, value));
+    }
+
+    /**
+     * Creates a section block with multiple fields
+     * <p>
+     * Fields are displayed side-by-side in columns (up to 5 fields).
+     * Each field is a key-value pair.
+     *
+     * @param fields Map of field labels to values
+     * @return A map representing the section block structure
+     */
+    public static Map<String, Object> fieldsBlock(Map<String, String> fields) {
+        Map<String, Object> block = new HashMap<>();
+        block.put("type", "section");
+
+        List<Map<String, String>> fieldList = fields.entrySet().stream()
+                .map(entry -> {
+                    Map<String, String> field = new HashMap<>();
+                    field.put("type", "mrkdwn");
+                    field.put("text", String.format("*%s:* %s", entry.getKey(), entry.getValue()));
+                    return field;
+                })
+                .toList();
+
+        block.put("fields", fieldList);
+        return block;
+    }
+
+    /**
+     * Creates a divider block
+     * <p>
+     * Divider blocks display a visual separator line between sections.
+     *
+     * @return A map representing the divider block structure
+     */
+    public static Map<String, Object> dividerBlock() {
+        Map<String, Object> block = new HashMap<>();
+        block.put("type", "divider");
+        return block;
+    }
+
+    /**
+     * Creates a context block with markdown text
+     * <p>
+     * Context blocks display auxiliary information in a smaller font,
+     * typically used for metadata, timestamps, or status indicators.
+     *
+     * @param markdownText The markdown-formatted text content
+     * @return A map representing the context block structure
+     */
+    public static Map<String, Object> contextBlock(String markdownText) {
+        Map<String, Object> block = new HashMap<>();
+        block.put("type", "context");
+
+        Map<String, String> textObj = new HashMap<>();
+        textObj.put("type", "mrkdwn");
+        textObj.put("text", markdownText);
+
+        block.put("elements", List.of(textObj));
+        return block;
     }
 }

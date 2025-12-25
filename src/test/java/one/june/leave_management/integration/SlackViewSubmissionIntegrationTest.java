@@ -1,6 +1,5 @@
 package one.june.leave_management.integration;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,9 +9,9 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
@@ -31,10 +30,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Integration tests for Slack view submission API.
  * Tests the complete flow from Slack modal submission to leave creation.
  * Uses H2 in-memory database with real signature verification using test secret.
+ * <p>
+ * Note: These tests are NOT transactional because they test async processing.
+ * The @Transactional annotation would prevent the async method from seeing the data.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@Transactional
 class SlackViewSubmissionIntegrationTest {
 
     @LocalServerPort
@@ -45,7 +46,6 @@ class SlackViewSubmissionIntegrationTest {
 
     private String baseUrl;
     private RestTemplate restTemplate;
-    private ObjectMapper objectMapper = new ObjectMapper();
 
     // Test signing secret - must match the one in application-test.properties
     private static final String TEST_SIGNING_SECRET = "test-signing-secret";
@@ -54,6 +54,11 @@ class SlackViewSubmissionIntegrationTest {
     void setUp() {
         baseUrl = "http://localhost:" + port + "/integrations/slack";
         restTemplate = new RestTemplate();
+
+        // Clean up database before each test (required for async tests without @Transactional)
+        jdbcTemplate.execute("DELETE FROM leave_source_ref");
+        jdbcTemplate.execute("DELETE FROM leave");
+        jdbcTemplate.execute("DELETE FROM audit_log");
     }
 
     private HttpEntity<String> createSlackRequestEntity(String jsonPayload) {
@@ -169,7 +174,7 @@ class SlackViewSubmissionIntegrationTest {
                                 }
                             }
                         },
-                        "private_metadata": "U12345",
+                        "private_metadata": "{\\"userId\\":\\"U12345\\",\\"channelId\\":\\"C12345\\",\\"channelName\\":\\"test-channel\\",\\"threadTs\\":\\"1234567890.123456\\"}",
                         "title": {"type": "plain_text", "text": "Apply for Leave"}
                     }
                 }
@@ -177,7 +182,7 @@ class SlackViewSubmissionIntegrationTest {
 
         // When
         var response = restTemplate.postForEntity(
-                baseUrl + "/views",
+                baseUrl + "/interactions",
                 createSlackRequestEntity(jsonPayload),
                 String.class
         );
@@ -185,6 +190,9 @@ class SlackViewSubmissionIntegrationTest {
         // Then - HTTP response
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNullOrEmpty(); // Slack expects empty response
+
+        // Wait for async processing to complete
+        Thread.sleep(1000);
 
         // Then - Database validation
         Map<String, Object> leaveRecord = getLeaveFromDatabase("U12345", "2024-07-01", "2024-07-03");
@@ -248,7 +256,7 @@ class SlackViewSubmissionIntegrationTest {
                                 }
                             }
                         },
-                        "private_metadata": "U67890",
+                        "private_metadata": "{\\"userId\\":\\"U67890\\",\\"channelId\\":\\"C67890\\",\\"channelName\\":\\"test-channel\\",\\"threadTs\\":\\"1234567890.123456\\"}",
                         "title": {"type": "plain_text", "text": "Apply for Leave"}
                     }
                 }
@@ -256,13 +264,16 @@ class SlackViewSubmissionIntegrationTest {
 
         // When
         var response = restTemplate.postForEntity(
-                baseUrl + "/views",
+                baseUrl + "/interactions",
                 createSlackRequestEntity(jsonPayload),
                 String.class
         );
 
         // Then - HTTP response
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Wait for async processing to complete
+        Thread.sleep(500);
 
         // Then - Database validation
         Map<String, Object> leaveRecord = getLeaveFromDatabase("U67890", "2024-07-10", "2024-07-10");
@@ -326,7 +337,7 @@ class SlackViewSubmissionIntegrationTest {
                                 }
                             }
                         },
-                        "private_metadata": "U11111",
+                        "private_metadata": "{\\"userId\\":\\"U11111\\",\\"channelId\\":\\"C11111\\",\\"channelName\\":\\"test-channel\\",\\"threadTs\\":\\"1234567890.123456\\"}",
                         "title": {"type": "plain_text", "text": "Apply for Leave"}
                     }
                 }
@@ -334,13 +345,16 @@ class SlackViewSubmissionIntegrationTest {
 
         // When
         var response = restTemplate.postForEntity(
-                baseUrl + "/views",
+                baseUrl + "/interactions",
                 createSlackRequestEntity(jsonPayload),
                 String.class
         );
 
         // Then - HTTP response
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Wait for async processing to complete
+        Thread.sleep(500);
 
         // Then - Database validation (end date should equal start date)
         Map<String, Object> leaveRecord = getLeaveFromDatabase("U11111", "2024-07-20", "2024-07-20");
@@ -410,7 +424,7 @@ class SlackViewSubmissionIntegrationTest {
                                 }
                             }
                         },
-                        "private_metadata": "U22222",
+                        "private_metadata": "{\\"userId\\":\\"U22222\\",\\"channelId\\":\\"C22222\\",\\"channelName\\":\\"test-channel\\",\\"threadTs\\":\\"1234567890.123456\\"}",
                         "title": {"type": "plain_text", "text": "Apply for Leave"}
                     }
                 }
@@ -418,13 +432,16 @@ class SlackViewSubmissionIntegrationTest {
 
         // When
         var response = restTemplate.postForEntity(
-                baseUrl + "/views",
+                baseUrl + "/interactions",
                 createSlackRequestEntity(jsonPayload),
                 String.class
         );
 
         // Then - HTTP response
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Wait for async processing to complete
+        Thread.sleep(500);
 
         // Then - Database validation
         Map<String, Object> leaveRecord = getLeaveFromDatabase("U22222", "2024-08-01", "2024-08-05");
@@ -445,7 +462,7 @@ class SlackViewSubmissionIntegrationTest {
     }
 
     @Test
-    void shouldReturnUnauthorizedForInvalidSignature() throws Exception {
+    void shouldReturnOkForInvalidSignature() throws Exception {
         // Given
         String jsonPayload = """
                 {
@@ -488,7 +505,7 @@ class SlackViewSubmissionIntegrationTest {
                                 }
                             }
                         },
-                        "private_metadata": "U33333",
+                        "private_metadata": "{\\"userId\\":\\"U33333\\",\\"channelId\\":\\"C33333\\",\\"channelName\\":\\"test-channel\\",\\"threadTs\\":\\"1234567890.123456\\"}",
                         "title": {"type": "plain_text", "text": "Apply for Leave"}
                     }
                 }
@@ -502,16 +519,15 @@ class SlackViewSubmissionIntegrationTest {
         headers.set("X-Slack-Request-Timestamp", String.valueOf(Instant.now().getEpochSecond()));
         HttpEntity<String> entity = new HttpEntity<>(formPayload, headers);
 
-        // When & Then - RestTemplate throws exception for 4xx responses
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                restTemplate.postForEntity(baseUrl + "/views", entity, String.class)
-        )
-                .isInstanceOf(org.springframework.web.client.HttpClientErrorException.class)
-                .satisfies(e -> {
-                    org.springframework.web.client.HttpClientErrorException exception =
-                            (org.springframework.web.client.HttpClientErrorException) e;
-                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-                });
+        // When & Then - Should return 200 OK even with invalid signature
+        // The error is logged and sent via response_url (if available), but HTTP response is always 200
+        ResponseEntity<String> response = restTemplate.postForEntity(baseUrl + "/interactions", entity, String.class);
+
+        // Verify 200 OK status (Slack requirement)
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Verify empty response body
+        assertThat(response.getBody()).isNullOrEmpty();
     }
 
     @Test
@@ -564,7 +580,7 @@ class SlackViewSubmissionIntegrationTest {
                                     }
                                 }
                             },
-                            "private_metadata": "U%s",
+                            "private_metadata": "{\\"userId\\":\\"U%s\\",\\"channelId\\":\\"C%s\\",\\"channelName\\":\\"test-channel\\",\\"threadTs\\":\\"1234567890.123456\\"}",
                             "title": {"type": "plain_text", "text": "Apply for Leave"}
                         }
                     }
@@ -572,11 +588,11 @@ class SlackViewSubmissionIntegrationTest {
                     400 + i, 400 + i, 400 + i, 400 + i, 400 + i,
                     durationLabel, duration,
                     1 + i * 5, 1 + i * 5,
-                    400 + i
+                    400 + i, 400 + i
             );
 
             var response = restTemplate.postForEntity(
-                    baseUrl + "/views",
+                    baseUrl + "/interactions",
                     createSlackRequestEntity(jsonPayload),
                     String.class
             );

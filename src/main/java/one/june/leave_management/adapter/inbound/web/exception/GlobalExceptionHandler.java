@@ -4,6 +4,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import one.june.leave_management.common.exception.DomainException;
 import one.june.leave_management.common.exception.ErrorResponse;
 import one.june.leave_management.common.exception.OverlappingLeaveException;
+import one.june.leave_management.common.exception.SlackApiException;
+import one.june.leave_management.common.exception.SlackCommunicationException;
+import one.june.leave_management.common.exception.SlackModalException;
+import one.june.leave_management.common.exception.SlackPayloadParseException;
+import one.june.leave_management.common.exception.SlackSignatureVerificationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -125,6 +130,123 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
     }
+
+    // ========== Slack Exception Handlers ==========
+
+    /**
+     * Handles Slack signature verification failures
+     * <p>
+     * Returns 200 OK to prevent Slack from retrying the request.
+     * Logs the error for monitoring and debugging.
+     *
+     * @param ex      The signature verification exception
+     * @param request The HTTP request
+     * @return 200 OK with empty body
+     */
+    @ExceptionHandler(SlackSignatureVerificationException.class)
+    public ResponseEntity<Void> handleSlackSignatureVerificationException(
+            SlackSignatureVerificationException ex,
+            HttpServletRequest request
+    ) {
+        logger.error("Slack signature verification failed for {}: {}", request.getRequestURI(), ex.getMessage());
+
+        // Return 200 OK to prevent Slack from retrying
+        // The error has been logged, and no response body is needed
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Handles Slack payload parsing failures
+     * <p>
+     * Returns 200 OK to prevent Slack from retrying the request.
+     * Logs the error for monitoring and debugging.
+     *
+     * @param ex      The payload parse exception
+     * @param request The HTTP request
+     * @return 200 OK with empty body
+     */
+    @ExceptionHandler(SlackPayloadParseException.class)
+    public ResponseEntity<Void> handleSlackPayloadParseException(
+            SlackPayloadParseException ex,
+            HttpServletRequest request
+    ) {
+        logger.error("Slack payload parsing failed for {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+
+        // Return 200 OK to prevent Slack from retrying
+        // The error has been logged, and no response body is needed
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Handles Slack API communication failures
+     * <p>
+     * Returns 200 OK to prevent Slack from retrying the request.
+     * Logs detailed error information including endpoint and error code.
+     *
+     * @param ex      The Slack API exception
+     * @param request The HTTP request
+     * @return 200 OK with empty body
+     */
+    @ExceptionHandler(SlackApiException.class)
+    public ResponseEntity<Void> handleSlackApiException(
+            SlackApiException ex,
+            HttpServletRequest request
+    ) {
+        logger.error("Slack API error on endpoint '{}' (code: {}) for {}: {}",
+                ex.getEndpoint(), ex.getErrorCode(), request.getRequestURI(), ex.getMessage());
+
+        // Return 200 OK to prevent Slack from retrying
+        // The error has been logged with full context
+        // Success/failure will be communicated via thread messages
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Handles Slack modal operation failures
+     * <p>
+     * Returns 200 OK to prevent Slack from retrying the request.
+     * Logs detailed error information including trigger_id and user_id.
+     *
+     * @param ex      The Slack modal exception
+     * @param request The HTTP request
+     * @return 200 OK with empty body
+     */
+    @ExceptionHandler(SlackModalException.class)
+    public ResponseEntity<Void> handleSlackModalException(
+            SlackModalException ex,
+            HttpServletRequest request
+    ) {
+        logger.error("Slack modal error for user '{}' (trigger_id: {}) on {}: {}",
+                ex.getUserId(), ex.getTriggerId(), request.getRequestURI(), ex.getMessage());
+
+        // Return 200 OK to prevent Slack from retrying
+        // The error has been logged with full context
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Handles all Slack communication exceptions (catch-all)
+     * <p>
+     * Returns 200 OK to prevent Slack from retrying the request.
+     * Logs the error for monitoring and debugging.
+     *
+     * @param ex      The Slack communication exception
+     * @param request The HTTP request
+     * @return 200 OK with empty body
+     */
+    @ExceptionHandler(SlackCommunicationException.class)
+    public ResponseEntity<Void> handleSlackCommunicationException(
+            SlackCommunicationException ex,
+            HttpServletRequest request
+    ) {
+        logger.error("Slack communication error for {}: {}", request.getRequestURI(), ex.getMessage());
+
+        // Return 200 OK to prevent Slack from retrying
+        // The error has been logged, and no response body is needed
+        return ResponseEntity.ok().build();
+    }
+
+    // ========== End Slack Exception Handlers ==========
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(

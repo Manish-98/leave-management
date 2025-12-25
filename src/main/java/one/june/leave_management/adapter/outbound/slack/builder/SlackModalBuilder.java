@@ -129,6 +129,7 @@ public class SlackModalBuilder {
         return SlackModalView.builder()
                 .type("modal")
                 .title(SlackText.plainText(title, true))
+                .notifyOnClose(true)
                 .blocks(blocks)
                 .submit(SlackText.plainText(submitText, true))
                 .close(SlackText.plainText(closeText, true))
