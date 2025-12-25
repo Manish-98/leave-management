@@ -37,9 +37,6 @@ out/
 .vscode/
 
 ### Docker ###
-.dockerignore
-*Dockerfile*
-*docker-compose*.yml
 *.log
 
 ### Environment ###
