@@ -6,19 +6,16 @@ import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
 import one.june.leave_management.domain.leave.model.SourceType;
-import org.junit.jupiter.api.AfterEach;
+import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
@@ -31,10 +28,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for Audit functionality.
  * Verifies that all requests and responses are properly logged to the audit_log table.
+ *
+ * Note: transactional=false is required because tests make HTTP requests via RestTemplate,
+ * and the data needs to be committed to the database for the HTTP layer to see it.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("test")
-@Transactional
+@IntegrationTest(transactional = false)
 class AuditIntegrationTest {
 
     @LocalServerPort
@@ -52,11 +50,6 @@ class AuditIntegrationTest {
     void setUp() {
         baseUrl = "http://localhost:" + port + "/api/leaves";
         restTemplate = new RestTemplate();
-    }
-
-    @AfterEach
-    void tearDown() {
-        // Cleanup is handled by @Transactional and H2's in-memory nature
     }
 
     private HttpEntity<LeaveIngestionRequest> createRequestEntity(LeaveIngestionRequest request) {

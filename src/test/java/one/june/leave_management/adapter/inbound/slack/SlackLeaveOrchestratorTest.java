@@ -11,7 +11,7 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenResponse;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
-import one.june.leave_management.application.leave.service.LeaveIngestionService;
+import one.june.leave_management.application.leave.service.LeaveService;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
@@ -55,7 +55,7 @@ import static org.mockito.Mockito.*;
 class SlackLeaveOrchestratorTest {
 
     @Mock
-    private LeaveIngestionService leaveIngestionService;
+    private LeaveService leaveService;
 
     @Mock
     private LeaveMapper leaveMapper;
@@ -77,7 +77,7 @@ class SlackLeaveOrchestratorTest {
 
     @BeforeEach
     void setUp() {
-        orchestrator = new SlackLeaveOrchestrator(leaveIngestionService, leaveMapper, slackApiClient);
+        orchestrator = new SlackLeaveOrchestrator(leaveService, leaveMapper, slackApiClient);
     }
 
     @Nested
@@ -95,7 +95,7 @@ class SlackLeaveOrchestratorTest {
             LeaveDto result = createMockLeaveDto();
 
             when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
-            when(leaveIngestionService.ingest(any())).thenReturn(result);
+            when(leaveService.ingest(any())).thenReturn(result);
 
             CountDownLatch latch = new CountDownLatch(1);
             doAnswer(invocation -> {
@@ -109,7 +109,7 @@ class SlackLeaveOrchestratorTest {
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
             verify(leaveMapper).toCommand(leaveRequest, SourceType.SLACK, leaveRequest.getSourceId());
-            verify(leaveIngestionService).ingest(command);
+            verify(leaveService).ingest(command);
             verify(slackApiClient, times(1)).postThreadReply(eq(TEST_CHANNEL_ID), eq(TEST_THREAD_TS), any());
         }
 
@@ -124,7 +124,7 @@ class SlackLeaveOrchestratorTest {
             LeaveDto result = createMockLeaveDto();
 
             when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
-            when(leaveIngestionService.ingest(any())).thenReturn(result);
+            when(leaveService.ingest(any())).thenReturn(result);
 
             CountDownLatch latch = new CountDownLatch(1);
             doAnswer(invocation -> {
@@ -137,7 +137,7 @@ class SlackLeaveOrchestratorTest {
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-            verify(leaveIngestionService).ingest(command);
+            verify(leaveService).ingest(command);
         }
 
         @Test
@@ -151,7 +151,7 @@ class SlackLeaveOrchestratorTest {
             RuntimeException validationException = new RuntimeException("Validation failed: Invalid date range");
 
             when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
-            when(leaveIngestionService.ingest(any())).thenThrow(validationException);
+            when(leaveService.ingest(any())).thenThrow(validationException);
 
             CountDownLatch latch = new CountDownLatch(1);
             AtomicReference<String> errorMessage = new AtomicReference<>();
@@ -183,7 +183,7 @@ class SlackLeaveOrchestratorTest {
             RuntimeException dbException = new RuntimeException("Database connection failed");
 
             when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
-            when(leaveIngestionService.ingest(any())).thenThrow(dbException);
+            when(leaveService.ingest(any())).thenThrow(dbException);
 
             CountDownLatch latch = new CountDownLatch(1);
             doAnswer(invocation -> {
@@ -217,7 +217,7 @@ class SlackLeaveOrchestratorTest {
             doAnswer(invocation -> {
                 latch.countDown();
                 return result;
-            }).when(leaveIngestionService).ingest(any());
+            }).when(leaveService).ingest(any());
 
             // When
             orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
@@ -245,7 +245,7 @@ class SlackLeaveOrchestratorTest {
             doAnswer(invocation -> {
                 latch.countDown();
                 throw new RuntimeException("Ingestion failed");
-            }).when(leaveIngestionService).ingest(any());
+            }).when(leaveService).ingest(any());
 
             // When
             orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
@@ -266,7 +266,7 @@ class SlackLeaveOrchestratorTest {
             LeaveDto result = createMockLeaveDto();
 
             when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
-            when(leaveIngestionService.ingest(any())).thenAnswer(invocation -> {
+            when(leaveService.ingest(any())).thenAnswer(invocation -> {
                 Thread.sleep(100); // Simulate processing
                 return result;
             });

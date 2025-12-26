@@ -165,9 +165,10 @@ public class AuditAspect {
      */
     private Object captureRequestBody(ProceedingJoinPoint joinPoint) {
         Object[] args = joinPoint.getArgs();
-        // Filter out HttpServletRequest and HttpServletResponse objects
+        // Filter out HttpServletRequest, HttpServletResponse, and null objects (from optional @RequestParam)
         return Arrays.stream(args)
-                .filter(arg -> !(arg instanceof HttpServletRequest)
+                .filter(arg -> arg != null
+                        && !(arg instanceof HttpServletRequest)
                         && !(arg instanceof jakarta.servlet.http.HttpServletResponse))
                 .findFirst()
                 .orElse(null);

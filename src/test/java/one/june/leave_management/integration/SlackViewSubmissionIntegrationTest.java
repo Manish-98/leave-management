@@ -1,9 +1,9 @@
 package one.june.leave_management.integration;
 
+import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -11,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
@@ -34,8 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Note: These tests are NOT transactional because they test async processing.
  * The @Transactional annotation would prevent the async method from seeing the data.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("test")
+@IntegrationTest(transactional = false)
 class SlackViewSubmissionIntegrationTest {
 
     @LocalServerPort
@@ -54,11 +52,6 @@ class SlackViewSubmissionIntegrationTest {
     void setUp() {
         baseUrl = "http://localhost:" + port + "/integrations/slack";
         restTemplate = new RestTemplate();
-
-        // Clean up database before each test (required for async tests without @Transactional)
-        jdbcTemplate.execute("DELETE FROM leave_source_ref");
-        jdbcTemplate.execute("DELETE FROM leave");
-        jdbcTemplate.execute("DELETE FROM audit_log");
     }
 
     private HttpEntity<String> createSlackRequestEntity(String jsonPayload) {

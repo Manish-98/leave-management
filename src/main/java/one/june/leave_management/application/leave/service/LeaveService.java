@@ -1,23 +1,33 @@
 package one.june.leave_management.application.leave.service;
 
+import one.june.leave_management.adapter.inbound.web.dto.LeaveFetchQuery;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
+import one.june.leave_management.common.annotation.Auditable;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.domain.leave.model.Leave;
+import one.june.leave_management.domain.leave.model.LeaveFilters;
 import one.june.leave_management.domain.leave.model.LeaveSourceRef;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
 import one.june.leave_management.domain.leave.port.LeaveSourceRefRepository;
 import one.june.leave_management.domain.leave.service.LeaveDomainService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
+/**
+ * Unified service for leave operations.
+ * Handles both leave ingestion (create/update) and fetching with filters.
+ */
 @Service
-public class LeaveIngestionService {
-    private static final Logger logger = LoggerFactory.getLogger(LeaveIngestionService.class);
+public class LeaveService {
+
+    private static final Logger logger = LoggerFactory.getLogger(LeaveService.class);
 
     private final LeaveRepository leaveRepository;
     private final LeaveSourceRefRepository leaveSourceRefRepository;
@@ -25,11 +35,11 @@ public class LeaveIngestionService {
     private final LeaveDomainService leaveDomainService;
     private final LeaveMapper leaveMapper;
 
-    public LeaveIngestionService(LeaveRepository leaveRepository,
-                                 LeaveSourceRefRepository leaveSourceRefRepository,
-                                 OutboundSyncService outboundSyncService,
-                                 LeaveDomainService leaveDomainService,
-                                 LeaveMapper leaveMapper) {
+    public LeaveService(LeaveRepository leaveRepository,
+                        LeaveSourceRefRepository leaveSourceRefRepository,
+                        OutboundSyncService outboundSyncService,
+                        LeaveDomainService leaveDomainService,
+                        LeaveMapper leaveMapper) {
         this.leaveRepository = leaveRepository;
         this.leaveSourceRefRepository = leaveSourceRefRepository;
         this.outboundSyncService = outboundSyncService;
@@ -37,6 +47,13 @@ public class LeaveIngestionService {
         this.leaveMapper = leaveMapper;
     }
 
+    /**
+     * Ingest a leave request (create or update).
+     * Creates a new leave or updates an existing one based on source type and source ID.
+     *
+     * @param command the leave ingestion command
+     * @return the created or updated leave DTO
+     */
     @Transactional
     public LeaveDto ingest(LeaveIngestionCommand command) {
         logger.info("Ingesting leave: {}", command);
@@ -57,6 +74,69 @@ public class LeaveIngestionService {
 
         logger.info("Successfully ingested leave: {}", leave);
         return leaveMapper.toDto(savedLeave);
+    }
+
+    /**
+     * Fetch leaves based on the provided filter criteria with pagination support.
+     * All filters are optional - if no filters are provided, returns all leaves.
+     *
+     * @param query the filter query containing optional userId, year, and quarter
+     * @param pageable pagination parameters (page, size, sort)
+     * @return paginated list of leaves matching the filter criteria
+     * @throws IllegalArgumentException if quarter is provided without year
+     */
+    @Auditable
+    @Transactional(readOnly = true)
+    public Page<LeaveDto> fetchLeaves(LeaveFetchQuery query, Pageable pageable) {
+        logger.info("Fetching leaves with query: {} and pageable: {}", query, pageable);
+
+        // Validate the query parameters
+        query.validate();
+
+        // Convert query to domain filters
+        LeaveFilters filters = convertToFilters(query);
+
+        // Fetch leaves from repository
+        Page<Leave> leavesPage = leaveRepository.findByFilters(filters, pageable);
+
+        // Convert to DTOs
+        Page<LeaveDto> dtoPage = leavesPage.map(leaveMapper::toDto);
+
+        logger.info("Successfully fetched {} leaves (page {} of {})",
+                    dtoPage.getNumberOfElements(),
+                    dtoPage.getNumber() + 1,
+                    dtoPage.getTotalPages());
+
+        return dtoPage;
+    }
+
+    /**
+     * Convert LeaveFetchQuery to LeaveFilters domain model.
+     * Extracts quarter start/end months if quarter is provided.
+     *
+     * @param query the web layer query object
+     * @return the domain layer filters object
+     */
+    private LeaveFilters convertToFilters(LeaveFetchQuery query) {
+        LeaveFilters.LeaveFiltersBuilder builder = LeaveFilters.builder();
+
+        // User ID filter
+        if (query.getUserId() != null && !query.getUserId().isBlank()) {
+            builder.userId(query.getUserId());
+        }
+
+        // Year filter
+        if (query.getYear() != null) {
+            builder.year(query.getYear());
+        }
+
+        // Quarter filter - extract start and end months
+        if (query.getQuarter() != null) {
+            builder.startMonth(query.getQuarter().getStartMonth());
+            builder.endMonth(query.getQuarter().getEndMonth());
+        }
+
+        return builder.build();
     }
 
     private Leave createNewLeave(LeaveIngestionCommand command) {

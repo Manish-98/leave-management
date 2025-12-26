@@ -7,19 +7,16 @@ import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
 import one.june.leave_management.domain.leave.model.SourceType;
-import org.junit.jupiter.api.AfterEach;
+import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
@@ -34,10 +31,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * Integration tests for Leave Ingestion API.
  * Uses H2 in-memory database with no mocking.
  * Clock is controlled through fixed dates in tests.
+ *
+ * Note: transactional=false is required because tests make HTTP requests via RestTemplate,
+ * and the data needs to be committed to the database for the HTTP layer to see it.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("test")
-@Transactional
+@IntegrationTest(transactional = false)
 class LeaveIngestionIntegrationTest {
 
     @LocalServerPort
@@ -57,11 +55,6 @@ class LeaveIngestionIntegrationTest {
     void setUp() {
         baseUrl = "http://localhost:" + port + "/api/leaves";
         restTemplate = new RestTemplate();
-    }
-
-    @AfterEach
-    void tearDown() {
-        // Cleanup is handled by @Transactional and H2's in-memory nature
     }
 
     private HttpEntity<LeaveIngestionRequest> createRequestEntity(LeaveIngestionRequest request) {

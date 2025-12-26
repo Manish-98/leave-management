@@ -51,7 +51,7 @@ public class SlackLeaveRequestMapper {
      * Extracts form values from the view state and maps them to the leave request structure:
      * <ul>
      *   <li>sourceType: SLACK</li>
-     *   <li>sourceId: Set to view.id (will be overridden in LeaveIngestionService call)</li>
+     *   <li>sourceId: Set to view.id (will be overridden in LeaveService call)</li>
      *   <li>userId: From private_metadata (Slack user ID)</li>
      *   <li>dateRange: From start_date and end_date fields</li>
      *   <li>type: From leave_type_category_action (ANNUAL_LEAVE or OPTIONAL_HOLIDAY)</li>

@@ -1,6 +1,7 @@
 package one.june.leave_management.application.audit.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.persistence.jpa.entity.AuditLogJpaEntity;
@@ -24,7 +25,10 @@ public class AuditService {
 
     public AuditService(AuditLogJpaRepository auditLogJpaRepository) {
         this.auditLogJpaRepository = auditLogJpaRepository;
-        this.objectMapper = new ObjectMapper();
+        // Configure ObjectMapper to disable REQUIRE_HANDLERS_FOR_JAVA8_TIMES
+        // This allows serialization of objects with LocalDate fields without JavaTimeModule
+        this.objectMapper = new ObjectMapper()
+                .disable(MapperFeature.REQUIRE_HANDLERS_FOR_JAVA8_TIMES);
     }
 
     /**

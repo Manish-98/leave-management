@@ -18,7 +18,7 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackOption;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
-import one.june.leave_management.application.leave.service.LeaveIngestionService;
+import one.june.leave_management.application.leave.service.LeaveService;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -36,7 +36,7 @@ import java.util.List;
  * - Posts success/failure messages back to the Slack thread
  * <p>
  * This is part of the adapter layer and coordinates between:
- * - Application services (LeaveIngestionService)
+ * - Application services (LeaveService)
  * - Slack messaging (SlackMessageTemplate, SlackApiClient)
  * <p>
  * The @Async annotation ensures the method runs in a separate thread,
@@ -48,16 +48,16 @@ import java.util.List;
 @Service
 public class SlackLeaveOrchestrator {
 
-    private final LeaveIngestionService leaveIngestionService;
+    private final LeaveService leaveService;
     private final LeaveMapper leaveMapper;
     private final SlackApiClient slackApiClient;
 
     public SlackLeaveOrchestrator(
-            LeaveIngestionService leaveIngestionService,
+            LeaveService leaveService,
             LeaveMapper leaveMapper,
             SlackApiClient slackApiClient
     ) {
-        this.leaveIngestionService = leaveIngestionService;
+        this.leaveService = leaveService;
         this.leaveMapper = leaveMapper;
         this.slackApiClient = slackApiClient;
     }
@@ -98,7 +98,7 @@ public class SlackLeaveOrchestrator {
             );
 
             // Ingest the leave
-            LeaveDto result = leaveIngestionService.ingest(command);
+            LeaveDto result = leaveService.ingest(command);
             log.info("Successfully created leave with ID: {}", result.getId());
 
             // Build success message

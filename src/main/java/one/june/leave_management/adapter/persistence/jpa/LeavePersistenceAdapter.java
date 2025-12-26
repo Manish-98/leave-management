@@ -6,10 +6,13 @@ import one.june.leave_management.adapter.persistence.jpa.repository.LeaveJpaRepo
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.Leave;
+import one.june.leave_management.domain.leave.model.LeaveFilters;
 import one.june.leave_management.domain.leave.model.LeaveSourceRef;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -128,5 +131,42 @@ public class LeavePersistenceAdapter implements LeaveRepository {
         return overlappingEntities.stream()
                 .map(leaveMapper::toDomainEntity)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Leave> findByFilters(LeaveFilters filters, Pageable pageable) {
+        logger.debug("Finding leaves with filters: {}", filters);
+
+        // Calculate date ranges for year and quarter filters
+        java.time.LocalDate yearStart = null;
+        java.time.LocalDate yearEnd = null;
+        if (filters.getYear() != null) {
+            yearStart = java.time.LocalDate.of(filters.getYear(), 1, 1);
+            yearEnd = java.time.LocalDate.of(filters.getYear(), 12, 31);
+        }
+
+        java.time.LocalDate quarterStart = null;
+        java.time.LocalDate quarterEnd = null;
+        if (filters.getStartMonth() != null && filters.getEndMonth() != null && filters.getYear() != null) {
+            quarterStart = java.time.LocalDate.of(filters.getYear(), filters.getStartMonth(), 1);
+            // Last day of the end month
+            int lastDayOfMonth = java.time.YearMonth.of(filters.getYear(), filters.getEndMonth()).lengthOfMonth();
+            quarterEnd = java.time.LocalDate.of(filters.getYear(), filters.getEndMonth(), lastDayOfMonth);
+        }
+
+        Page<LeaveJpaEntity> jpaPage = leaveJpaRepository.findByFilters(
+                filters.getUserId(),
+                filters.getYear(),
+                yearStart,
+                yearEnd,
+                filters.getStartMonth(),
+                filters.getEndMonth(),
+                quarterStart,
+                quarterEnd,
+                pageable
+        );
+
+        return jpaPage.map(leaveMapper::toDomainEntity);
     }
 }
