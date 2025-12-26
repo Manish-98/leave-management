@@ -3,6 +3,7 @@ plugins {
 	id 'org.springframework.boot' version '4.0.0'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'io.freefair.lombok' version '8.6'
+	id 'jacoco'
 }
 
 springBoot {
@@ -47,6 +48,136 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
+test {
 	useJUnitPlatform()
+	finalizedBy 'jacocoTestReport'
+}
+
+// ========== JaCoCo Configuration ==========
+jacoco {
+	toolVersion = "0.8.11"
+}
+
+// JaCoCo report configuration
+jacocoTestReport {
+	dependsOn test
+	reports {
+		xml.required = true
+		html.required = true
+		csv.required = false
+	}
+
+	// Exclude POJO packages from coverage calculation
+	def excludePatterns = [
+			// DTOs - Data Transfer Objects
+			'**/dto/**',
+
+			// JPA Entities
+			'**/entity/**',
+
+			// Domain Models (enums, value objects)
+			'**/model/**',
+
+			// Configuration
+			'**/config/**',
+
+			// Exceptions
+			'**/exception/**',
+
+			// Application main class
+			'**/LeaveManagementApplication.class'
+	]
+
+	classDirectories.setFrom(files(classDirectories.files.collect {
+		fileTree(dir: it, exclude: excludePatterns)
+	}))
+}
+
+// Test coverage verification
+jacocoTestCoverageVerification {
+	dependsOn jacocoTestReport
+
+	// Apply same exclusions as jacocoTestReport
+	def excludePatterns = [
+			// DTOs - Data Transfer Objects
+			'**/dto/**',
+
+			// JPA Entities
+			'**/entity/**',
+
+			// Domain Models (enums, value objects)
+			'**/model/**',
+
+			// Configuration
+			'**/config/**',
+
+			// Exceptions
+			'**/exception/**',
+
+			// Application main class
+			'**/LeaveManagementApplication.class'
+	]
+
+	classDirectories.setFrom(files(classDirectories.files.collect {
+		fileTree(dir: it, exclude: excludePatterns)
+	}))
+
+	violationRules {
+		rule {
+			// Overall project coverage (excluding POJOs)
+			limit {
+				minimum = 0.80  // 50% minimum coverage (realistic target)
+			}
+		}
+
+		rule {
+			element = 'PACKAGE'
+			// Apply to all business logic packages
+			includes = [
+					'one.june.leave_management.application.**.service',
+					'one.june.leave_management.application.**.porter',
+					'one.june.leave_management.application.**.command',
+					'one.june.leave_management.domain.**',
+					'one.june.leave_management.adapter.inbound.**',
+					'one.june.leave_management.adapter.outbound.**.client',
+					'one.june.leave_management.adapter.outbound.**.builder',
+					'one.june.leave_management.adapter.outbound.sync',
+					'one.june.leave_management.adapter.persistence.**.mapper',
+					'one.june.leave_management.common.**',
+			]
+			// Explicitly exclude POJO packages from rule
+			excludes = [
+					'**.dto.**',
+					'**.entity.**',
+					'**.model.**',  // Exclude model packages (enums and value objects)
+					'**.config.**',
+					'**.exception.**',
+			]
+			limit {
+				counter = 'LINE'
+				value = 'COVEREDRATIO'
+				minimum = 0.70  // 35% for individual business logic packages
+			}
+		}
+	}
+}
+
+// Enforce coverage checks during build
+tasks.named('check') {
+	dependsOn jacocoTestCoverageVerification
+}
+
+// Custom task to generate and show coverage report
+tasks.register('coverage') {
+	group = 'verification'
+	description = 'Generate JaCoCo coverage reports'
+
+	dependsOn 'jacocoTestReport'
+	doLast {
+		def reportFile = file("${buildDir}/reports/jacoco/test/html/index.html")
+		if (reportFile.exists()) {
+			println("Coverage report generated: ${reportFile.absolutePath}")
+			println("Open in browser: file://${reportFile.absolutePath}")
+		}
+	}
 }
