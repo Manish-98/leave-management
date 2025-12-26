@@ -1,5 +1,6 @@
 package one.june.leave_management.common.model;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 
 /**
@@ -7,10 +8,15 @@ import lombok.Getter;
  * Used for filtering leaves by quarterly periods.
  */
 @Getter
+@Schema(description = "Quarter of the year for filtering leave requests")
 public enum Quarter {
+    @Schema(description = "First Quarter (January-March)")
     Q1(1, 3, "First Quarter (January-March)"),
+    @Schema(description = "Second Quarter (April-June)")
     Q2(4, 6, "Second Quarter (April-June)"),
+    @Schema(description = "Third Quarter (July-September)")
     Q3(7, 9, "Third Quarter (July-September)"),
+    @Schema(description = "Fourth Quarter (October-December)")
     Q4(10, 12, "Fourth Quarter (October-December)");
 
     private final int startMonth;

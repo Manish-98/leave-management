@@ -93,6 +93,58 @@ The project uses the package name `one.june.leave_management` (with underscores)
 - **Spring Boot Actuator**: For application monitoring and management
 - **Validation**: For request/response validation
 - **Flyway**: For database version control
+- **SpringDoc OpenAPI**: For API documentation and Swagger UI
+
+## API Documentation
+
+The application includes comprehensive OpenAPI 3.0 documentation using SpringDoc OpenAPI.
+
+### Accessing API Documentation
+
+Once the application is running, you can access the interactive API documentation at:
+
+- **Swagger UI**: http://localhost:8080/swagger-ui/index.html
+  - Interactive UI for exploring and testing API endpoints
+  - Provides "Try it out" functionality for each endpoint
+  - Displays request/response schemas, examples, and validation rules
+
+- **OpenAPI JSON Spec**: http://localhost:8080/api-docs
+  - Raw OpenAPI 3.0 specification in JSON format
+  - Can be used with other API documentation tools
+
+- **OpenAPI YAML Spec**: http://localhost:8080/api-docs.yaml
+  - OpenAPI 3.0 specification in YAML format
+  - Useful for generating client SDKs or documentation
+
+### API Endpoints Documented
+
+The following REST API endpoints are documented:
+
+1. **POST /api/leaves/ingest** - Create a new leave request
+   - Request body: `LeaveIngestionRequest`
+   - Response: `LeaveDto` (HTTP 201)
+   - Validation: All required fields are validated
+
+2. **GET /api/leaves** - Fetch leave requests with optional filters
+   - Query parameters: `userId`, `year`, `quarter`, `pageable`
+   - Response: Page of `LeaveDto` (HTTP 200)
+   - Pagination: Default page size is 20
+
+### Excluded Endpoints
+
+Slack integration endpoints (`/integrations/slack/**`) are intentionally excluded from the public API documentation as they are internal integration points.
+
+### Customization
+
+The API documentation configuration is located in:
+- `src/main/java/one/june/leave_management/adapter/inbound/web/config/OpenApiConfig.java`
+- SpringDoc properties in `application.properties`
+
+You can customize:
+- API information (title, version, description)
+- Server configurations
+- Tag groupings
+- Path matching/exclusion rules
 
 ## Development Notes
 
@@ -121,6 +173,9 @@ The project includes complete Docker configuration:
 
 ### Docker Ports
 - Application: http://localhost:8080
+- Swagger UI: http://localhost:8080/swagger-ui/index.html
+- OpenAPI Spec (JSON): http://localhost:8080/api-docs
+- OpenAPI Spec (YAML): http://localhost:8080/api-docs.yaml
 - PostgreSQL: localhost:5432
 - pgAdmin: http://localhost:5050 (when enabled)
 - Health endpoint: http://localhost:8080/actuator/health

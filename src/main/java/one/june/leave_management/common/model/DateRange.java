@@ -1,5 +1,6 @@
 package one.june.leave_management.common.model;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import one.june.leave_management.common.validation.ValidDateRange;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,11 +18,22 @@ import java.time.LocalDate;
 @NoArgsConstructor
 @AllArgsConstructor
 @ValidDateRange
+@Schema(description = "Date range with start and end dates (inclusive)")
 public class DateRange {
 
+    @Schema(
+            description = "Start date of the leave period (inclusive)",
+            example = "2024-01-15",
+            required = true
+    )
     @NotNull(message = "Start date is required")
     private LocalDate startDate;
 
+    @Schema(
+            description = "End date of the leave period (inclusive)",
+            example = "2024-01-20",
+            required = true
+    )
     @NotNull(message = "End date is required")
     private LocalDate endDate;
 
