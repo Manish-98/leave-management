@@ -8,16 +8,23 @@ import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.domain.leave.model.Leave;
 import one.june.leave_management.domain.leave.model.LeaveFilters;
 import one.june.leave_management.domain.leave.model.LeaveSourceRef;
+import one.june.leave_management.domain.leave.model.BulkUploadJob;
+import one.june.leave_management.domain.leave.model.BulkUploadRecord;
+import one.june.leave_management.domain.leave.model.SourceType;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
 import one.june.leave_management.domain.leave.port.LeaveSourceRefRepository;
 import one.june.leave_management.domain.leave.service.LeaveDomainService;
+import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadRecordRepository;
+import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -34,17 +41,26 @@ public class LeaveService {
     private final OutboundSyncService outboundSyncService;
     private final LeaveDomainService leaveDomainService;
     private final LeaveMapper leaveMapper;
+    private final BulkUploadRecordRepository bulkUploadRecordRepository;
+    private final BulkUploadJobRepository bulkUploadJobRepository;
+    private final CsvResultService csvResultService;
 
     public LeaveService(LeaveRepository leaveRepository,
                         LeaveSourceRefRepository leaveSourceRefRepository,
                         OutboundSyncService outboundSyncService,
                         LeaveDomainService leaveDomainService,
-                        LeaveMapper leaveMapper) {
+                        LeaveMapper leaveMapper,
+                        BulkUploadRecordRepository bulkUploadRecordRepository,
+                        BulkUploadJobRepository bulkUploadJobRepository,
+                        CsvResultService csvResultService) {
         this.leaveRepository = leaveRepository;
         this.leaveSourceRefRepository = leaveSourceRefRepository;
         this.outboundSyncService = outboundSyncService;
         this.leaveDomainService = leaveDomainService;
         this.leaveMapper = leaveMapper;
+        this.bulkUploadRecordRepository = bulkUploadRecordRepository;
+        this.bulkUploadJobRepository = bulkUploadJobRepository;
+        this.csvResultService = csvResultService;
     }
 
     /**
@@ -173,7 +189,13 @@ public class LeaveService {
         return sourceRef;
     }
 
-    private void performOutboundSync(Leave leave, one.june.leave_management.domain.leave.model.SourceType sourceType) {
+    private void performOutboundSync(Leave leave, SourceType sourceType) {
+        // Skip outbound sync for bulk CSV uploads
+        if (sourceType == SourceType.CSV_BULK) {
+            logger.info("Skipping outbound sync for CSV bulk upload leave {}", leave.getId());
+            return;
+        }
+
         try {
             outboundSyncService.sync(leave, sourceType);
             logger.info("Successfully synced leave {} to external systems", leave.getId());
@@ -203,6 +225,78 @@ public class LeaveService {
             // This is a data inconsistency - source reference points to non-existent leave
             logger.error("Source reference {} points to non-existent leave ID: {}", sourceRef, sourceRef.getLeaveId());
             throw new IllegalStateException("Source reference points to non-existent leave: " + sourceRef.getLeaveId());
+        }
+    }
+
+    /**
+     * Bulk ingest leaves from CSV upload asynchronously
+     * Processes each leave individually, continuing on errors
+     *
+     * @param job the bulk upload job entity
+     * @param commands list of leave ingestion commands from CSV
+     */
+    @Async("taskExecutor")
+    @Transactional
+    public void bulkIngestAsync(BulkUploadJob job, List<LeaveIngestionCommand> commands) {
+        logger.info("Starting bulk ingest for job {} with {} commands", job.getId(), commands.size());
+
+        int rowNumber = 0;
+
+        for (LeaveIngestionCommand command : commands) {
+            rowNumber++;
+
+            try {
+                // Ingest the leave
+                LeaveDto result = ingest(command);
+
+                // Create success record
+                BulkUploadRecord record = BulkUploadRecord.createSuccess(
+                        job,
+                        rowNumber,
+                        command.getUserId(),
+                        result.getId()
+                );
+                bulkUploadRecordRepository.save(record);
+
+                // Update job counters
+                job.incrementSuccess();
+
+                logger.debug("Successfully ingested row {} for job {}", rowNumber, job.getId());
+
+            } catch (Exception e) {
+                // Create failure record
+                BulkUploadRecord record = BulkUploadRecord.createFailure(
+                        job,
+                        rowNumber,
+                        command.getUserId(),
+                        e.getMessage()
+                );
+                bulkUploadRecordRepository.save(record);
+
+                // Update job counters
+                job.incrementFailure();
+
+                logger.warn("Failed to ingest row {} for job {}: {}", rowNumber, job.getId(), e.getMessage());
+                // Continue processing next record
+            }
+        }
+
+        // Mark job as completed
+        job.markAsCompleted();
+        bulkUploadJobRepository.save(job);
+
+        logger.info("Completed bulk ingest for job {}: {} success, {} failed",
+                job.getId(), job.getSuccessfulRecords(), job.getFailedRecords());
+
+        // Generate CSV result file
+        try {
+            String resultFilePath = csvResultService.generateResultFile(job);
+            job.setResultFilePath(resultFilePath);
+            bulkUploadJobRepository.save(job);
+            logger.info("Successfully generated result CSV for job {} at {}", job.getId(), resultFilePath);
+        } catch (Exception e) {
+            logger.error("Failed to generate result CSV for job {}", job.getId(), e);
+            // Don't fail the job - the ingest was successful, only result generation failed
         }
     }
 }
