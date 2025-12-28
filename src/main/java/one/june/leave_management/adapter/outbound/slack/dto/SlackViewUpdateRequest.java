@@ -1,7 +1,6 @@
 package one.june.leave_management.adapter.outbound.slack.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import one.june.leave_management.adapter.outbound.slack.dto.blocks.SlackInputBlock;
 import one.june.leave_management.adapter.outbound.slack.dto.composition.SlackText;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

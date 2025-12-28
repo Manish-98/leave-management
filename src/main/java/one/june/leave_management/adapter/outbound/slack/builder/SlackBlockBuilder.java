@@ -190,13 +190,9 @@ public class SlackBlockBuilder {
 
         // Set initial option if provided
         if (initialValue != null && !initialValue.trim().isEmpty()) {
-            SlackOption initialOption = options.stream()
+            options.stream()
                     .filter(opt -> opt.getValue().equals(initialValue))
-                    .findFirst()
-                    .orElse(null);
-            if (initialOption != null) {
-                builder.initialOption(initialOption);
-            }
+                    .findFirst().ifPresent(builder::initialOption);
         }
 
         return SlackInputBlock.builder()
@@ -327,32 +323,6 @@ public class SlackBlockBuilder {
     }
 
     // ========== Section Block Methods for Modals ==========
-
-    /**
-     * Creates a section block with a radio buttons accessory
-     * <p>
-     * This creates a section block that displays text and includes radio buttons
-     * as an interactive accessory. Unlike input blocks, section blocks with
-     * accessories support dispatch_action in modals, enabling dynamic updates.
-     * <p>
-     * Use this for leave type selection, where you want the modal to update
-     * immediately when the user changes their selection.
-     *
-     * @param blockId        The unique identifier for this block
-     * @param labelMarkdown  The label text (markdown formatted, e.g., "*Leave Type*")
-     * @param radioButtons   The radio buttons element to include as accessory
-     * @return A configured SlackSectionBlock
-     */
-    public static SlackSectionBlock sectionWithRadioButtons(
-            String blockId,
-            String labelMarkdown,
-            SlackRadioButtonsElement radioButtons) {
-        return SlackSectionBlock.builder()
-                .blockId(blockId)
-                .text(SlackText.markdown(labelMarkdown))
-                .accessory(radioButtons)
-                .build();
-    }
 
     /**
      * Creates a section block with a static select accessory

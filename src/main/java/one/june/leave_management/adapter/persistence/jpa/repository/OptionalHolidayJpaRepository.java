@@ -7,13 +7,14 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Spring Data JPA repository for OptionalHoliday entities.
  * Adapter implementation of the OptionalHolidayRepository port.
  */
 @Repository
-public interface OptionalHolidayJpaRepository extends JpaRepository<OptionalHolidayJpaEntity, Long> {
+public interface OptionalHolidayJpaRepository extends JpaRepository<OptionalHolidayJpaEntity, UUID> {
 
     /**
      * Find all holidays ordered by date ascending.

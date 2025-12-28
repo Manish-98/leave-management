@@ -4,6 +4,7 @@ import one.june.leave_management.domain.leave.model.OptionalHoliday;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Repository interface for OptionalHoliday domain operations.
@@ -13,8 +14,8 @@ public interface OptionalHolidayRepository {
     OptionalHoliday save(OptionalHoliday holiday);
     List<OptionalHoliday> findAll();
     List<OptionalHoliday> findAllByOrderByDateAsc();
-    Optional<OptionalHoliday> findById(Long id);
+    Optional<OptionalHoliday> findById(UUID id);
     Optional<OptionalHoliday> findByDate(java.time.LocalDate date);
-    void deleteById(Long id);
-    boolean existsById(Long id);
+    void deleteById(UUID id);
+    boolean existsById(UUID id);
 }

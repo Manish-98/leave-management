@@ -31,7 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * Integration tests for Leave Ingestion API.
  * Uses H2 in-memory database with no mocking.
  * Clock is controlled through fixed dates in tests.
- *
  * Note: transactional=false is required because tests make HTTP requests via RestTemplate,
  * and the data needs to be committed to the database for the HTTP layer to see it.
  */
@@ -46,7 +45,6 @@ class LeaveIngestionIntegrationTest {
 
     private String baseUrl;
     private RestTemplate restTemplate;
-    private ObjectMapper objectMapper = new ObjectMapper();
 
     // Fixed date for testing
     private static final LocalDate FIXED_DATE = LocalDate.of(2024, 6, 15);

@@ -11,6 +11,7 @@ import lombok.ToString;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /**
  * JPA entity for OptionalHoliday persistence.
@@ -28,8 +29,8 @@ import java.time.LocalDateTime;
 public class OptionalHolidayJpaEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "id", updatable = false, nullable = false)
+    private UUID id;
 
     @Column(name = "date", nullable = false, unique = true)
     private LocalDate date;
@@ -48,6 +49,9 @@ public class OptionalHolidayJpaEntity {
 
     @PrePersist
     protected void onCreate() {
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;

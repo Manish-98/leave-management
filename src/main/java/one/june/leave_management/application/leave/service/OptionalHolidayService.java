@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -69,7 +70,7 @@ public class OptionalHolidayService {
      * @param id the holiday ID
      * @return optional containing the holiday DTO if found
      */
-    public OptionalHolidayDto getHolidayById(Long id) {
+    public OptionalHolidayDto getHolidayById(UUID id) {
         log.debug("Fetching optional holiday by id: {}", id);
 
         return optionalHolidayRepository.findById(id)
@@ -82,9 +83,56 @@ public class OptionalHolidayService {
      * @param id the holiday ID
      * @return Optional containing the holiday domain entity if found
      */
-    public Optional<OptionalHoliday> findById(Long id) {
+    public Optional<OptionalHoliday> findById(UUID id) {
         log.debug("Fetching optional holiday domain entity by id: {}", id);
         return optionalHolidayRepository.findById(id);
+    }
+
+    /**
+     * Create a new optional holiday.
+     * @param holiday the holiday to create
+     * @return the created holiday DTO
+     */
+    public OptionalHolidayDto createHoliday(OptionalHoliday holiday) {
+        log.debug("Creating new optional holiday: {}", holiday.getName());
+
+        OptionalHoliday saved = optionalHolidayRepository.save(holiday);
+        return toDto(saved);
+    }
+
+    /**
+     * Update an existing optional holiday.
+     * @param id the ID of the holiday to update
+     * @param updatedHoliday the updated holiday data
+     * @return the updated holiday DTO
+     * @throws IllegalArgumentException if holiday not found
+     */
+    public OptionalHolidayDto updateHoliday(UUID id, OptionalHoliday updatedHoliday) {
+        log.debug("Updating optional holiday with id: {}", id);
+
+        if (!optionalHolidayRepository.existsById(id)) {
+            throw new IllegalArgumentException("Optional holiday not found with id: " + id);
+        }
+
+        // Preserve the ID and update other fields
+        OptionalHoliday holidayWithId = OptionalHoliday.builder()
+                .id(id)
+                .date(updatedHoliday.getDate())
+                .name(updatedHoliday.getName())
+                .description(updatedHoliday.getDescription())
+                .build();
+
+        OptionalHoliday saved = optionalHolidayRepository.save(holidayWithId);
+        return toDto(saved);
+    }
+
+    /**
+     * Delete an optional holiday by ID.
+     * @param id the ID of the holiday to delete
+     */
+    public void deleteHoliday(UUID id) {
+        log.debug("Deleting optional holiday with id: {}", id);
+        optionalHolidayRepository.deleteById(id);
     }
 
     /**

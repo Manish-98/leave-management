@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Component
@@ -43,7 +44,7 @@ public class OptionalHolidayPersistenceAdapter implements OptionalHolidayReposit
     }
 
     @Override
-    public Optional<OptionalHoliday> findById(Long id) {
+    public Optional<OptionalHoliday> findById(UUID id) {
         return jpaRepository.findById(id)
                 .map(this::toDomainEntity);
     }
@@ -56,12 +57,12 @@ public class OptionalHolidayPersistenceAdapter implements OptionalHolidayReposit
 
     @Override
     @Transactional
-    public void deleteById(Long id) {
+    public void deleteById(UUID id) {
         jpaRepository.deleteById(id);
     }
 
     @Override
-    public boolean existsById(Long id) {
+    public boolean existsById(UUID id) {
         return jpaRepository.existsById(id);
     }
 

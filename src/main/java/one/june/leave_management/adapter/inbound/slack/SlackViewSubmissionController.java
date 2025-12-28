@@ -8,7 +8,6 @@ import one.june.leave_management.common.annotation.Auditable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -102,9 +101,7 @@ public class SlackViewSubmissionController {
                 log.debug("Routing block_actions to orchestrator");
                 slackLeaveOrchestrator.handleBlockAction(requestBody);
             }
-            default -> {
-                log.warn("Unknown interaction type: {}", type);
-            }
+            default -> log.warn("Unknown interaction type: {}", type);
         }
 
         // Step 4: Return empty response - Slack closes the modal automatically

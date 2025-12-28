@@ -7,8 +7,8 @@ import one.june.leave_management.domain.audit.model.AuditLog;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.MDC;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -73,8 +73,7 @@ public class AuditAspect {
             }
         }
 
-        Object result = null;
-        Throwable exception = null;
+        Object result;
 
         try {
             // Execute the actual method
@@ -102,7 +101,6 @@ public class AuditAspect {
             return result;
 
         } catch (Throwable e) {
-            exception = e;
             // Capture error details
             auditLogBuilder
                     .responseStatus(500) // Internal Server Error for exceptions
@@ -183,7 +181,7 @@ public class AuditAspect {
      */
     private Integer extractResponseStatus(Object response) {
         if (response instanceof org.springframework.http.ResponseEntity) {
-            return ((org.springframework.http.ResponseEntity<?>) response).getStatusCode().value();
+            return ((ResponseEntity<?>) response).getStatusCode().value();
         }
         return null;
     }
@@ -197,10 +195,8 @@ public class AuditAspect {
      */
     private Object makeReadableResponse(Object response, String endpoint) {
         // For Slack endpoints with empty responses, return a descriptive message
-        if (endpoint.startsWith("/integrations/slack") &&
-            response instanceof org.springframework.http.ResponseEntity) {
-            org.springframework.http.ResponseEntity<?> resp =
-                (org.springframework.http.ResponseEntity<?>) response;
+        if (endpoint != null && endpoint.startsWith("/integrations/slack") &&
+            response instanceof ResponseEntity<?> resp) {
             if (resp.getBody() == null) {
                 return "{\"message\": \"Empty response (as required by Slack API)\"}";
             }
@@ -245,6 +241,7 @@ public class AuditAspect {
     /**
      * Extract user ID from response object.
      * Looks for userId field using reflection.
+     * Handles ResponseEntity by extracting from the body.
      *
      * @param response the response object
      * @return the user ID or null
@@ -254,11 +251,20 @@ public class AuditAspect {
             return null;
         }
 
-        // Try to get userId from response body using reflection
+        // If it's a ResponseEntity, extract from the body
+        Object target = response;
+        if (response instanceof ResponseEntity<?> resp) {
+            target = resp.getBody();
+            if (target == null) {
+                return null;
+            }
+        }
+
+        // Try to get userId from target object using reflection
         try {
-            java.lang.reflect.Field userIdField = response.getClass().getDeclaredField("userId");
+            java.lang.reflect.Field userIdField = target.getClass().getDeclaredField("userId");
             userIdField.setAccessible(true);
-            return (String) userIdField.get(response);
+            return (String) userIdField.get(target);
         } catch (Exception e) {
             // Field not found or inaccessible
             return null;

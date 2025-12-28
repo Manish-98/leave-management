@@ -10,7 +10,6 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Represents a Slack block_actions interaction request.

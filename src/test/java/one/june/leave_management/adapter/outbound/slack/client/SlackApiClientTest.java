@@ -4,6 +4,8 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenResponse;
+import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateRequest;
+import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.composition.SlackText;
 import one.june.leave_management.config.SlackProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +19,8 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -27,6 +31,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.argThat;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Unit tests for {@link SlackApiClient}
@@ -54,6 +60,7 @@ class SlackApiClientTest {
         lenient().when(slackProperties.getBotToken()).thenReturn("xoxb-test-token");
         lenient().when(slackProperties.getApiBaseUrl()).thenReturn("https://slack.com/api");
         lenient().when(slackProperties.getViewsOpenEndpoint()).thenReturn("/views.open");
+        lenient().when(slackProperties.getViewsUpdateEndpoint()).thenReturn("/views.update");
 
         // Manually create the SlackApiClient with mocked dependencies
         slackApiClient = new SlackApiClient(restTemplate, slackProperties);
@@ -947,6 +954,617 @@ class SlackApiClientTest {
             assertThatThrownBy(() -> slackApiClient.postThreadReply(channelId, threadTs, message))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessage("Channel ID cannot be null or empty");
+        }
+    }
+
+    @Nested
+    @DisplayName("updateModal() Tests")
+    class UpdateModalTests {
+
+        private SlackModalView createTestModalView() {
+            return SlackModalView.builder()
+                    .type("modal")
+                    .title(SlackText.plainText("Test Modal", false))
+                    .blocks(java.util.List.of())
+                    .build();
+        }
+
+        private SlackViewUpdateResponse createSuccessResponse() {
+            return SlackViewUpdateResponse.builder()
+                    .ok(true)
+                    .view(SlackViewUpdateResponse.SlackModalViewResponse.builder()
+                            .id("V12345")
+                            .build())
+                    .build();
+        }
+
+        private SlackViewUpdateResponse createErrorResponse(String error) {
+            return SlackViewUpdateResponse.builder()
+                    .ok(false)
+                    .error(error)
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Should update modal with valid inputs")
+        void shouldUpdateModalWithValidInputs() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+            SlackViewUpdateResponse expectedResponse = createSuccessResponse();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            SlackViewUpdateResponse actualResponse = slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            assertThat(actualResponse).isNotNull();
+            assertThat(actualResponse.getOk()).isTrue();
+            assertThat(actualResponse.getView()).isNotNull();
+            assertThat(actualResponse.getView().getId()).isEqualTo("V12345");
+
+            verify(restTemplate).exchange(
+                    eq("https://slack.com/api/views.update"),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should handle null viewHash parameter")
+        void shouldHandleNullViewHashParameter() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = null;
+            SlackViewUpdateResponse expectedResponse = createSuccessResponse();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            SlackViewUpdateResponse actualResponse = slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            assertThat(actualResponse).isNotNull();
+            assertThat(actualResponse.getOk()).isTrue();
+
+            verify(restTemplate).exchange(
+                    eq("https://slack.com/api/views.update"),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should handle empty viewHash parameter")
+        void shouldHandleEmptyViewHashParameter() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "";
+            SlackViewUpdateResponse expectedResponse = createSuccessResponse();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            SlackViewUpdateResponse actualResponse = slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            assertThat(actualResponse).isNotNull();
+            assertThat(actualResponse.getOk()).isTrue();
+
+            verify(restTemplate).exchange(
+                    eq("https://slack.com/api/views.update"),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should return response with updated view")
+        void shouldReturnResponseWithUpdatedView() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+            SlackViewUpdateResponse expectedResponse = SlackViewUpdateResponse.builder()
+                    .ok(true)
+                    .view(SlackViewUpdateResponse.SlackModalViewResponse.builder()
+                            .id("V12345")
+                            .teamId("T12345")
+                            .build())
+                    .build();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            SlackViewUpdateResponse actualResponse = slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            assertThat(actualResponse).isNotNull();
+            assertThat(actualResponse.getOk()).isTrue();
+            assertThat(actualResponse.getView()).isNotNull();
+            assertThat(actualResponse.getView().getId()).isEqualTo("V12345");
+            assertThat(actualResponse.getView().getTeamId()).isEqualTo("T12345");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when botToken is null")
+        void shouldThrowExceptionWhenBotTokenIsNull() {
+            // Given
+            when(slackProperties.getBotToken()).thenReturn(null);
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Slack bot token is not configured");
+
+            verify(restTemplate, never()).exchange(
+                    anyString(),
+                    any(HttpMethod.class),
+                    any(HttpEntity.class),
+                    any(Class.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should throw exception when botToken is empty")
+        void shouldThrowExceptionWhenBotTokenIsEmpty() {
+            // Given
+            when(slackProperties.getBotToken()).thenReturn("   ");
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Slack bot token is not configured");
+
+            verify(restTemplate, never()).exchange(
+                    anyString(),
+                    any(HttpMethod.class),
+                    any(HttpEntity.class),
+                    any(Class.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should throw exception when viewId is null")
+        void shouldThrowExceptionWhenViewIdIsNull() {
+            // Given
+            String viewId = null;
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("View ID cannot be null or empty");
+
+            verify(restTemplate, never()).exchange(
+                    anyString(),
+                    any(HttpMethod.class),
+                    any(HttpEntity.class),
+                    any(Class.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should throw exception when viewId is empty")
+        void shouldThrowExceptionWhenViewIdIsEmpty() {
+            // Given
+            String viewId = "   ";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("View ID cannot be null or empty");
+
+            verify(restTemplate, never()).exchange(
+                    anyString(),
+                    any(HttpMethod.class),
+                    any(HttpEntity.class),
+                    any(Class.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should throw exception when updatedView is null")
+        void shouldThrowExceptionWhenUpdatedViewIsNull() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = null;
+            String viewHash = "hash123";
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Updated view cannot be null");
+
+            verify(restTemplate, never()).exchange(
+                    anyString(),
+                    any(HttpMethod.class),
+                    any(HttpEntity.class),
+                    any(Class.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should handle null response body from Slack")
+        void shouldHandleNullResponseBodyFromSlack() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(null));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Unexpected error calling Slack API: Null response from Slack API");
+        }
+
+        @Test
+        @DisplayName("Should handle Slack API error responses")
+        void shouldHandleSlackApiErrorResponses() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+            SlackViewUpdateResponse errorResponse = createErrorResponse("account_inactive");
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(errorResponse));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Unexpected error calling Slack API: Slack API error: account_inactive");
+        }
+
+        @Test
+        @DisplayName("Should propagate Slack error messages")
+        void shouldPropagateSlackErrorMessages() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+            SlackViewUpdateResponse errorResponse = createErrorResponse("invalid_auth");
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(errorResponse));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("invalid_auth");
+        }
+
+        @Test
+        @DisplayName("Should handle non-200 HTTP status codes")
+        void shouldHandleNon200HttpStatusCodes() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(new ResponseEntity<>(HttpStatus.NOT_FOUND));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Unexpected error calling Slack API: Null response from Slack API");
+        }
+
+        @Test
+        @DisplayName("Should handle RestClientException")
+        void shouldHandleRestClientException() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenThrow(new RestClientException("Network error"));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("HTTP error calling Slack API")
+                    .hasCauseInstanceOf(RestClientException.class);
+        }
+
+        @Test
+        @DisplayName("Should handle HttpClientErrorException")
+        void shouldHandleHttpClientErrorException() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            HttpClientErrorException httpException = new HttpClientErrorException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid token"
+            );
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenThrow(httpException);
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("HTTP error calling Slack API")
+                    .hasCauseInstanceOf(HttpClientErrorException.class);
+        }
+
+        @Test
+        @DisplayName("Should handle HttpServerErrorException")
+        void shouldHandleHttpServerErrorException() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            HttpServerErrorException httpException = new HttpServerErrorException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Server error"
+            );
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenThrow(httpException);
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("HTTP error calling Slack API")
+                    .hasCauseInstanceOf(HttpServerErrorException.class);
+        }
+
+        @Test
+        @DisplayName("Should handle generic exceptions")
+        void shouldHandleGenericExceptions() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenThrow(new RuntimeException("Unexpected error"));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateModal(viewId, view, viewHash))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Unexpected error calling Slack API");
+        }
+
+        @Test
+        @DisplayName("Should convert SlackModalView correctly")
+        void shouldConvertSlackModalViewCorrectly() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = SlackModalView.builder()
+                    .type("modal")
+                    .title(SlackText.plainText("Test Title", false))
+                    .blocks(java.util.List.of())
+                    .privateMetadata("private-data")
+                    .callbackId("callback-123")
+                    .submit(SlackText.plainText("Submit", true))
+                    .close(SlackText.plainText("Close", true))
+                    .notifyOnClose(true)
+                    .clearOnClose(false)
+                    .build();
+            String viewHash = "hash123";
+            SlackViewUpdateResponse expectedResponse = createSuccessResponse();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            ArgumentCaptor<HttpEntity<SlackViewUpdateRequest>> entityCaptor =
+                    ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate).exchange(
+                    eq("https://slack.com/api/views.update"),
+                    eq(HttpMethod.POST),
+                    entityCaptor.capture(),
+                    eq(SlackViewUpdateResponse.class)
+            );
+
+            SlackViewUpdateRequest capturedRequest = entityCaptor.getValue().getBody();
+            assertThat(capturedRequest).isNotNull();
+            assertThat(capturedRequest.getViewId()).isEqualTo(viewId);
+            assertThat(capturedRequest.getHash()).isEqualTo(viewHash);
+            assertThat(capturedRequest.getView()).isNotNull();
+            assertThat(capturedRequest.getView().getType()).isEqualTo("modal");
+            assertThat(capturedRequest.getView().getPrivateMetadata()).isEqualTo("private-data");
+            assertThat(capturedRequest.getView().getCallbackId()).isEqualTo("callback-123");
+            assertThat(capturedRequest.getView().getNotifyOnClose()).isTrue();
+            assertThat(capturedRequest.getView().getClearOnClose()).isFalse();
+        }
+
+        @Test
+        @DisplayName("Should include hash parameter in request")
+        void shouldIncludeHashParameterInRequest() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "test-hash-123";
+            SlackViewUpdateResponse expectedResponse = createSuccessResponse();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            ArgumentCaptor<HttpEntity<SlackViewUpdateRequest>> entityCaptor =
+                    ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate).exchange(
+                    eq("https://slack.com/api/views.update"),
+                    eq(HttpMethod.POST),
+                    entityCaptor.capture(),
+                    eq(SlackViewUpdateResponse.class)
+            );
+
+            SlackViewUpdateRequest capturedRequest = entityCaptor.getValue().getBody();
+            assertThat(capturedRequest).isNotNull();
+            assertThat(capturedRequest.getHash()).isEqualTo(viewHash);
+        }
+
+        @Test
+        @DisplayName("Should set correct headers")
+        void shouldSetCorrectHeaders() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = createTestModalView();
+            String viewHash = "hash123";
+            SlackViewUpdateResponse expectedResponse = createSuccessResponse();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            ArgumentCaptor<HttpEntity<SlackViewUpdateRequest>> entityCaptor =
+                    ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate).exchange(
+                    eq("https://slack.com/api/views.update"),
+                    eq(HttpMethod.POST),
+                    entityCaptor.capture(),
+                    eq(SlackViewUpdateResponse.class)
+            );
+
+            HttpEntity<SlackViewUpdateRequest> capturedEntity = entityCaptor.getValue();
+            assertThat(capturedEntity.getHeaders()).isNotNull();
+            assertThat(capturedEntity.getHeaders().getContentType()).isNotNull();
+            assertThat(capturedEntity.getHeaders().getContentType().toString()).contains("application/json");
+            assertThat(capturedEntity.getHeaders().getContentType().getCharset()).isNotNull();
+            assertThat(capturedEntity.getHeaders().getFirst("Authorization")).isEqualTo("Bearer xoxb-test-token");
+        }
+
+        @Test
+        @DisplayName("Should exclude externalId from update request")
+        void shouldExcludeExternalIdFromUpdateRequest() {
+            // Given
+            String viewId = "V12345";
+            SlackModalView view = SlackModalView.builder()
+                    .type("modal")
+                    .title(SlackText.plainText("Test", false))
+                    .externalId("external-123") // This should be excluded (only valid for views.open)
+                    .blocks(java.util.List.of())
+                    .build();
+            String viewHash = "hash123";
+            SlackViewUpdateResponse expectedResponse = createSuccessResponse();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(SlackViewUpdateResponse.class)
+            )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+            // When
+            slackApiClient.updateModal(viewId, view, viewHash);
+
+            // Then
+            ArgumentCaptor<HttpEntity<SlackViewUpdateRequest>> entityCaptor =
+                    ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate).exchange(
+                    eq("https://slack.com/api/views.update"),
+                    eq(HttpMethod.POST),
+                    entityCaptor.capture(),
+                    eq(SlackViewUpdateResponse.class)
+            );
+
+            SlackViewUpdateRequest capturedRequest = entityCaptor.getValue().getBody();
+            assertThat(capturedRequest).isNotNull();
+            assertThat(capturedRequest.getView()).isNotNull();
+            // SlackModalViewUpdate class doesn't have externalId field (only valid for views.open)
+            // The fact that the request was successful proves externalId was not included
+            assertThat(capturedRequest.getView().getType()).isEqualTo("modal");
         }
     }
 }

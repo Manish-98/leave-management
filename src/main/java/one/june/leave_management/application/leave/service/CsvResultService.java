@@ -3,20 +3,19 @@ package one.june.leave_management.application.leave.service;
 import com.opencsv.CSVWriter;
 import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.inbound.web.config.FileStorageConfig;
-import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.domain.leave.model.BulkUploadJob;
 import one.june.leave_management.domain.leave.model.BulkUploadRecord;
 import one.june.leave_management.domain.leave.model.Leave;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
 import one.june.leave_management.domain.leave.model.BulkUploadRecord.BulkRecordStatus;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadRecordRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -29,17 +28,15 @@ public class CsvResultService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    @Autowired
-    private FileStorageConfig fileStorageConfig;
+    private final FileStorageConfig fileStorageConfig;
+    private final BulkUploadRecordRepository bulkUploadRecordRepository;
+    private final LeaveRepository leaveRepository;
 
-    @Autowired
-    private BulkUploadRecordRepository bulkUploadRecordRepository;
-
-    @Autowired
-    private LeaveRepository leaveRepository;
-
-    @Autowired
-    private LeaveMapper leaveMapper;
+    public CsvResultService(FileStorageConfig fileStorageConfig, BulkUploadRecordRepository bulkUploadRecordRepository, LeaveRepository leaveRepository) {
+        this.fileStorageConfig = fileStorageConfig;
+        this.bulkUploadRecordRepository = bulkUploadRecordRepository;
+        this.leaveRepository = leaveRepository;
+    }
 
     /**
      * Generate a CSV result file for a bulk upload job.
@@ -54,7 +51,7 @@ public class CsvResultService {
 
         // Fetch all records for this job, ordered by row number
         List<BulkUploadRecord> records = bulkUploadRecordRepository.findByJobId(job.getId());
-        records.sort((r1, r2) -> r1.getRowNumber().compareTo(r2.getRowNumber()));
+        records.sort(Comparator.comparing(BulkUploadRecord::getRowNumber));
 
         // Create result file path
         String fileName = String.format("bulk-upload-result-%s.csv", job.getId());

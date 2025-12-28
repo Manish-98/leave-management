@@ -1,6 +1,7 @@
 package one.june.leave_management.adapter.inbound.web.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.common.exception.DomainException;
 import one.june.leave_management.common.exception.ErrorResponse;
 import one.june.leave_management.common.exception.OverlappingLeaveException;
@@ -79,6 +80,24 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(BulkUploadJobNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleBulkUploadJobNotFoundException(
+            BulkUploadJobNotFoundException ex,
+            HttpServletRequest request
+    ) {
+        logger.warn("Bulk upload job not found: {}", ex.getMessage());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.NOT_FOUND.value())
+                .error("Not Found")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

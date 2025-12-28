@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Mapper for converting Slack view submission requests to leave ingestion requests
@@ -111,7 +112,7 @@ public class SlackLeaveRequestMapper {
         if (leaveType == LeaveType.OPTIONAL_HOLIDAY) {
             // Extract holiday ID from dropdown
             String holidayIdStr = getSelectedValue(stateValues, BLOCK_HOLIDAY_SELECT, ACTION_HOLIDAY_SELECT);
-            Long holidayId = Long.parseLong(holidayIdStr);
+            UUID holidayId = UUID.fromString(holidayIdStr);
             log.debug("Extracted holiday ID: {}", holidayId);
 
             // Fetch holiday from database

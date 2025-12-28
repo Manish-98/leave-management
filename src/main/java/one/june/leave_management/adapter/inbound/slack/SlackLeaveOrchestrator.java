@@ -19,15 +19,12 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageResponse
 import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.SlackSectionBlock;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackOption;
-import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackRadioButtonsElement;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackStaticSelectElement;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveService;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
 import one.june.leave_management.common.mapper.LeaveMapper;
-import one.june.leave_management.domain.leave.model.LeaveDurationType;
-import one.june.leave_management.domain.leave.model.LeaveType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -362,20 +359,20 @@ public class SlackLeaveOrchestrator {
         // trigger_id is not needed for modal updates
 
         // Build the appropriate modal based on selected leave type
-        SlackModalView updatedModal;
-        switch (selectedLeaveType) {
-            case "ANNUAL_LEAVE":
+        SlackModalView updatedModal = switch (selectedLeaveType) {
+            case "ANNUAL_LEAVE" -> {
                 log.info("Building Annual Leave modal");
-                updatedModal = buildAnnualLeaveModal(slackRequest, threadTs, selectedLeaveType);
-                break;
-            case "OPTIONAL_HOLIDAY":
+                yield buildAnnualLeaveModal(slackRequest, threadTs);
+            }
+            case "OPTIONAL_HOLIDAY" -> {
                 log.info("Building Optional Holiday modal");
-                updatedModal = buildOptionalHolidayModal(slackRequest, threadTs, selectedLeaveType);
-                break;
-            default:
+                yield buildOptionalHolidayModal(slackRequest, threadTs);
+            }
+            default -> {
                 log.error("Unknown leave type selected: {}", selectedLeaveType);
                 throw new RuntimeException("Unknown leave type: " + selectedLeaveType);
-        }
+            }
+        };
 
         // Update the modal with hash validation
         log.info("Updating modal with view_id: {}, hash: {}", viewId, viewHash);
@@ -565,115 +562,6 @@ public class SlackLeaveOrchestrator {
     }
 
     /**
-     * Builds a combined leave application modal with all fields
-     * <p>
-     * This modal includes fields for both annual leave and optional holidays.
-     * Users select their leave type and fill in the relevant fields:
-     * <ul>
-     *   <li>Leave Type: Radio button (Annual Leave or Optional Holiday)</li>
-     *   <li>Duration: Radio button (Full Day, First Half, Second Half) - for Annual Leave</li>
-     *   <li>Start Date: Date picker - for Annual Leave</li>
-     *   <li>End Date: Date picker - for Annual Leave</li>
-     *   <li>Reason: Text input (optional) - for Annual Leave</li>
-     *   <li>Holiday: Dropdown - for Optional Holiday</li>
-     * </ul>
-     * <p>
-     * Backend validation will ensure users fill in the correct fields based on leave type.
-     *
-     * @param slackRequest The Slack command request containing user context
-     * @param threadTs     The thread timestamp for posting updates later
-     * @return A configured SlackModalView for leave application
-     */
-    private SlackModalView buildCombinedLeaveModal(SlackCommandRequest slackRequest, String threadTs) {
-        // Leave Type options
-        List<SlackOption> leaveTypeOptions = List.of(
-                SlackOption.of("Annual Leave", "ANNUAL_LEAVE"),
-                SlackOption.of("Optional Holiday", "OPTIONAL_HOLIDAY")
-        );
-
-        // Leave Duration options
-        List<SlackOption> leaveDurationOptions = List.of(
-                SlackOption.of("Full Day", "FULL_DAY"),
-                SlackOption.of("First Half", "FIRST_HALF"),
-                SlackOption.of("Second Half", "SECOND_HALF")
-        );
-
-        // Get holidays from database for dropdown
-        List<SlackOption> holidayOptions = optionalHolidayService.getAllHolidaysAsSlackOptions();
-
-        List<Object> blocks = List.of(
-                // Leave Type selection
-                SlackBlockBuilder.radioButtonsInput(
-                        "leave_type_category_block",
-                        "leave_type_category_action",
-                        "Leave Type",
-                        leaveTypeOptions,
-                        "ANNUAL_LEAVE"
-                ),
-
-                // Leave Duration selection (for Annual Leave)
-                SlackBlockBuilder.radioButtonsInput(
-                        "leave_duration_block",
-                        "leave_duration_action",
-                        "Duration",
-                        leaveDurationOptions,
-                        "FULL_DAY"
-                ),
-
-                // Start date (for Annual Leave)
-                SlackBlockBuilder.dateInput(
-                        "start_date_block",
-                        "start_date_action",
-                        "Start Date",
-                        "Select a date",
-                        false // required
-                ),
-
-                // End date (for Annual Leave)
-                SlackBlockBuilder.dateInput(
-                        "end_date_block",
-                        "end_date_action",
-                        "End Date",
-                        "Select a date",
-                        false // required
-                ),
-
-                // Reason (for Annual Leave, optional)
-                SlackBlockBuilder.plainTextInput(
-                        "reason_block",
-                        "reason_action",
-                        "Reason",
-                        "Optional: Provide a reason for your leave",
-                        true, // multiline
-                        true // optional
-                ),
-
-                // Holiday dropdown (for Optional Holiday)
-                SlackBlockBuilder.staticSelectInput(
-                        "holiday_select_block",
-                        "holiday_select_action",
-                        "Select Holiday",
-                        holidayOptions,
-                        "Choose a holiday from the list",
-                        null
-                )
-        );
-
-        // Create JSON metadata with thread context
-        String metadataJson = SlackMetadataUtil.createMetadata(
-                slackRequest.getUserId(),
-                slackRequest.getChannelId(),
-                slackRequest.getChannelName(),
-                threadTs
-        );
-
-        return SlackModalBuilder.create("Apply for Leave", "leave_application_submit")
-                .withBlocks(blocks)
-                .withPrivateMetadata(metadataJson)
-                .build();
-    }
-
-    /**
      * Builds an Annual Leave modal with full date pickers and duration options
      * <p>
      * This modal is shown when user selects ANNUAL_LEAVE as the leave type.
@@ -681,10 +569,10 @@ public class SlackLeaveOrchestrator {
      *
      * @param slackRequest The Slack command request containing user context
      * @param threadTs     The thread timestamp for posting updates later
-     * @param selectedLeaveType The preselected leave type (should be ANNUAL_LEAVE)
      * @return A configured SlackModalView for annual leave application
      */
-    private SlackModalView buildAnnualLeaveModal(SlackCommandRequest slackRequest, String threadTs, String selectedLeaveType) {
+    // Package-private for testing
+    SlackModalView buildAnnualLeaveModal(SlackCommandRequest slackRequest, String threadTs) {
         // Leave Type options (preselect ANNUAL_LEAVE)
         List<SlackOption> leaveTypeOptions = List.of(
                 SlackOption.of("Annual Leave", "ANNUAL_LEAVE"),
@@ -774,10 +662,10 @@ public class SlackLeaveOrchestrator {
      *
      * @param slackRequest The Slack command request containing user context
      * @param threadTs     The thread timestamp for posting updates later
-     * @param selectedLeaveType The preselected leave type (should be OPTIONAL_HOLIDAY)
      * @return A configured SlackModalView for optional holiday application
      */
-    private SlackModalView buildOptionalHolidayModal(SlackCommandRequest slackRequest, String threadTs, String selectedLeaveType) {
+    // Package-private for testing
+    SlackModalView buildOptionalHolidayModal(SlackCommandRequest slackRequest, String threadTs) {
         // Get holidays from database and convert to Slack options
         List<SlackOption> holidayOptions = optionalHolidayService.getAllHolidaysAsSlackOptions();
 

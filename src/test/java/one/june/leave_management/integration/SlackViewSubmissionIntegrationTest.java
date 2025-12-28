@@ -2,6 +2,7 @@ package one.june.leave_management.integration;
 
 import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -11,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
@@ -20,8 +23,10 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Month;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -109,6 +114,40 @@ class SlackViewSubmissionIntegrationTest {
                 WHERE leave_id = ? AND source_type = ?
                 """;
         return jdbcTemplate.queryForMap(sql, leaveId, sourceType);
+    }
+
+    /**
+     * Helper method to create an optional holiday via API
+     * Returns the UUID of the created holiday
+     */
+    private String createOptionalHolidayViaApi(LocalDate date, String name, String description) {
+        String requestBody = String.format("""
+                {
+                    "date": "%s",
+                    "name": "%s",
+                    "description": "%s"
+                }
+                """, date, name, description);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "http://localhost:" + port + "/api/admin/optional-holidays",
+                entity,
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        // Extract the UUID from the response
+        String idPattern = "\"id\":\"([a-f0-9\\-]+)\"";
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(idPattern);
+        java.util.regex.Matcher matcher = pattern.matcher(response.getBody());
+        assertThat(matcher.find()).isTrue();
+
+        return matcher.group(1);
     }
 
     @Test
@@ -207,19 +246,12 @@ class SlackViewSubmissionIntegrationTest {
 
     @Test
     void shouldCreateOptionalHolidayLeaveFromSlackViewSubmission() throws Exception {
-        // Given - Insert a test holiday first
-        jdbcTemplate.update(
-                "INSERT INTO optional_holidays (date, name, description, created_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                "2024-07-10", "Test Holiday", "A test holiday for integration testing"
+        // Given - Create a test holiday via API (ensures proper transaction commit)
+        String holidayId = createOptionalHolidayViaApi(
+                LocalDate.of(2024, Month.JANUARY, 1),
+                "New Year's Day",
+                "First day of the year"
         );
-
-        // Get the inserted holiday ID
-        Long holidayId = jdbcTemplate.queryForObject(
-                "SELECT id FROM optional_holidays WHERE date = ? AND name = ?",
-                Long.class,
-                "2024-07-10", "Test Holiday"
-        );
-        assertThat(holidayId).isNotNull();
 
         String jsonPayload = String.format("""
                 {
@@ -250,7 +282,7 @@ class SlackViewSubmissionIntegrationTest {
                                         "type": "static_select",
                                         "selected_option": {
                                             "text": {"type": "plain_text", "text": "2024-07-10 - Test Holiday"},
-                                            "value": "%d"
+                                            "value": "%s"
                                         }
                                     }
                                 }
@@ -276,11 +308,11 @@ class SlackViewSubmissionIntegrationTest {
         Thread.sleep(500);
 
         // Then - Database validation
-        Map<String, Object> leaveRecord = getLeaveFromDatabase("U67890", "2024-07-10", "2024-07-10");
+        Map<String, Object> leaveRecord = getLeaveFromDatabase("U67890", "2024-01-01", "2024-01-01");
         assertThat(leaveRecord).isNotNull();
         assertThat(leaveRecord.get("user_id")).isEqualTo("U67890");
-        assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 10));
-        assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 10));
+        assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 1, 1));
+        assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 1, 1));
         assertThat(leaveRecord.get("type")).isEqualTo("OPTIONAL_HOLIDAY");
         assertThat(leaveRecord.get("status")).isEqualTo("APPROVED");
         assertThat(leaveRecord.get("duration_type")).isEqualTo("FULL_DAY"); // Optional holidays default to FULL_DAY
@@ -462,7 +494,7 @@ class SlackViewSubmissionIntegrationTest {
     }
 
     @Test
-    void shouldReturnOkForInvalidSignature() throws Exception {
+    void shouldReturnOkForInvalidSignature() {
         // Given
         String jsonPayload = """
                 {
@@ -531,7 +563,7 @@ class SlackViewSubmissionIntegrationTest {
     }
 
     @Test
-    void shouldHandleAllLeaveDurations() throws Exception {
+    void shouldHandleAllLeaveDurations() {
         String[] durations = {"FULL_DAY", "FIRST_HALF", "SECOND_HALF"};
         String[] durationLabels = {"Full Day", "First Half", "Second Half"};
 

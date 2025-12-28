@@ -1,7 +1,7 @@
 package one.june.leave_management.adapter.inbound.slack;
 
+import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackCommandRequest;
-import one.june.leave_management.adapter.inbound.slack.dto.SlackViewClosedRequest;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewSubmissionRequest;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.adapter.outbound.slack.client.SlackApiClient;
@@ -31,12 +31,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -81,7 +79,6 @@ class SlackLeaveOrchestratorTest {
     private static final String TEST_THREAD_TS = "1234567890.123456";
     private static final String TEST_TRIGGER_ID = "trigger123";
     private static final String TEST_VIEW_ID = "V12345";
-    private static final String TEST_TIMESTAMP = "1234567890";
 
     @BeforeEach
     void setUp() {
@@ -833,6 +830,328 @@ class SlackLeaveOrchestratorTest {
         }
     }
 
+    @Nested
+    @DisplayName("Additional Edge Case Tests")
+    class AdditionalEdgeCaseTests {
+
+        @Test
+        @DisplayName("Should handle invalid leave type in command text")
+        void shouldHandleInvalidLeaveTypeInCommand() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("invalid_type");
+
+            SlackViewOpenResponse openResponse = new SlackViewOpenResponse();
+            openResponse.setOk(true);
+            when(slackApiClient.openModal(any(), any())).thenReturn(openResponse);
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then - Should still open modal with default values
+            verify(slackApiClient, times(1)).openModal(any(), any());
+        }
+
+        @Test
+        @DisplayName("Should handle service exception during async processing")
+        void shouldHandleServiceExceptionDuringAsyncProcessing() throws Exception {
+            // Given
+            LeaveIngestionRequest leaveRequest = createValidLeaveIngestionRequest(
+                    LeaveType.ANNUAL_LEAVE, LeaveDurationType.FULL_DAY
+            );
+            LeaveIngestionCommand command = createMockCommand();
+            RuntimeException serviceException = new RuntimeException("Service error");
+
+            when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
+            when(leaveService.ingest(any())).thenThrow(serviceException);
+
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<String> errorMessage = new AtomicReference<>();
+            doAnswer(invocation -> {
+                SlackMessageRequest message = invocation.getArgument(2);
+                errorMessage.set(message.getText());
+                latch.countDown();
+                return new SlackMessageResponse();
+            }).when(slackApiClient).postThreadReply(any(), any(), any());
+
+            // When
+            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+
+            // Then - Should handle exception gracefully
+            assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(errorMessage.get()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should handle empty command text gracefully")
+        void shouldHandleEmptyCommandTextGracefully() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("");
+
+            SlackViewOpenResponse openResponse = new SlackViewOpenResponse();
+            openResponse.setOk(true);
+            when(slackApiClient.openModal(any(), any())).thenReturn(openResponse);
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then - Should still open modal
+            verify(slackApiClient, times(1)).openModal(any(), any());
+        }
+
+        @Test
+        @DisplayName("Should process multiple leave requests concurrently")
+        void shouldProcessMultipleLeaveRequestsConcurrently() throws Exception {
+            // Given
+            LeaveIngestionRequest request1 = createValidLeaveIngestionRequest(
+                    LeaveType.ANNUAL_LEAVE, LeaveDurationType.FULL_DAY
+            );
+            LeaveIngestionRequest request2 = createValidLeaveIngestionRequest(
+                    LeaveType.OPTIONAL_HOLIDAY, LeaveDurationType.FIRST_HALF
+            );
+
+            LeaveIngestionCommand command1 = createMockCommand();
+            LeaveIngestionCommand command2 = createMockCommand();
+            LeaveDto mockDto = createMockLeaveDto();
+
+            when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command1, command2);
+            when(leaveService.ingest(any())).thenReturn(mockDto);
+
+            CountDownLatch latch = new CountDownLatch(2);
+            doAnswer(invocation -> {
+                latch.countDown();
+                return new SlackMessageResponse();
+            }).when(slackApiClient).postThreadReply(any(), any(), any());
+
+            // When - Process concurrently
+            orchestrator.processLeaveRequestAsync(request1, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequestAsync(request2, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+
+            // Then - Both should complete
+            assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+            verify(leaveService, times(2)).ingest(any());
+        }
+
+        @Test
+        @DisplayName("Should handle mapper throwing exception")
+        void shouldHandleMapperThrowingException() throws Exception {
+            // Given
+            LeaveIngestionRequest leaveRequest = createValidLeaveIngestionRequest(
+                    LeaveType.ANNUAL_LEAVE, LeaveDurationType.FULL_DAY
+            );
+
+            when(leaveMapper.toCommand(any(), any(), any()))
+                    .thenThrow(new RuntimeException("Mapper error"));
+
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<String> errorMessage = new AtomicReference<>();
+            doAnswer(invocation -> {
+                SlackMessageRequest message = invocation.getArgument(2);
+                errorMessage.set(message.getText());
+                latch.countDown();
+                return new SlackMessageResponse();
+            }).when(slackApiClient).postThreadReply(any(), any(), any());
+
+            // When
+            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+
+            // Then
+            assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(errorMessage.get()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should validate thread timestamp format")
+        void shouldValidateThreadTimestampFormat() throws Exception {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            String threadTs = "1234567890.123456"; // Valid Slack timestamp format
+
+            SlackViewOpenResponse openResponse = new SlackViewOpenResponse();
+            openResponse.setOk(true);
+
+            ArgumentCaptor<SlackModalView> modalCaptor = ArgumentCaptor.forClass(SlackModalView.class);
+            when(slackApiClient.openModal(any(), modalCaptor.capture())).thenReturn(openResponse);
+
+            // When
+            orchestrator.openLeaveApplicationModalAsync(slackRequest, threadTs);
+
+            Thread.sleep(500); // Wait for async processing
+
+            // Then - Should complete without error
+            verify(slackApiClient, times(1)).openModal(any(), any());
+
+            SlackModalView capturedModal = modalCaptor.getValue();
+            assertThat(capturedModal).isNotNull();
+            assertThat(capturedModal.getPrivateMetadata()).contains(threadTs);
+        }
+    }
+
+    @Nested
+    @DisplayName("handleBlockAction Tests")
+    class HandleBlockActionTests {
+
+        @Test
+        @DisplayName("Should update modal for ANNUAL_LEAVE selection")
+        void shouldUpdateModalForAnnualLeaveSelection() throws Exception {
+            // Given
+            String requestBody = createBlockActionRequestBody("ANNUAL_LEAVE");
+
+            // When
+            orchestrator.handleBlockAction(requestBody);
+
+            // Then
+            ArgumentCaptor<SlackModalView> modalCaptor = ArgumentCaptor.forClass(SlackModalView.class);
+            verify(slackApiClient).updateModal(eq(TEST_VIEW_ID), modalCaptor.capture(), eq("test-hash"));
+
+            SlackModalView capturedModal = modalCaptor.getValue();
+            assertThat(capturedModal).isNotNull();
+            assertThat(capturedModal.getPrivateMetadata()).contains(TEST_THREAD_TS);
+        }
+
+        @Test
+        @DisplayName("Should update modal for OPTIONAL_HOLIDAY selection")
+        void shouldUpdateModalForOptionalHolidaySelection() throws Exception {
+            // Given
+            String requestBody = createBlockActionRequestBody("OPTIONAL_HOLIDAY");
+
+            // When
+            orchestrator.handleBlockAction(requestBody);
+
+            // Then
+            ArgumentCaptor<SlackModalView> modalCaptor = ArgumentCaptor.forClass(SlackModalView.class);
+            verify(slackApiClient).updateModal(eq(TEST_VIEW_ID), modalCaptor.capture(), eq("test-hash"));
+
+            SlackModalView capturedModal = modalCaptor.getValue();
+            assertThat(capturedModal).isNotNull();
+            assertThat(capturedModal.getPrivateMetadata()).contains(TEST_THREAD_TS);
+            verify(optionalHolidayService).getAllHolidaysAsSlackOptions();
+        }
+
+        @Test
+        @DisplayName("Should throw exception for null actions")
+        void shouldThrowExceptionForNullActions() {
+            // Given
+            String requestBody = createBlockActionRequestBodyWithNullActions();
+
+            // When & Then
+            assertThatThrownBy(() -> orchestrator.handleBlockAction(requestBody))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("No actions found");
+        }
+
+        @Test
+        @DisplayName("Should throw exception for empty actions")
+        void shouldThrowExceptionForEmptyActions() {
+            // Given
+            String requestBody = createBlockActionRequestBodyWithEmptyActions();
+
+            // When & Then
+            assertThatThrownBy(() -> orchestrator.handleBlockAction(requestBody))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("No actions found");
+        }
+
+        @Test
+        @DisplayName("Should log warning and return for unknown action_id")
+        void shouldLogWarningAndReturnForUnknownActionId() throws Exception {
+            // Given
+            String requestBody = createBlockActionRequestBodyWithUnknownActionId("ANNUAL_LEAVE");
+
+            // When
+            orchestrator.handleBlockAction(requestBody);
+
+            // Then
+            verify(slackApiClient, never()).updateModal(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Should throw exception for unknown leave type")
+        void shouldThrowExceptionForUnknownLeaveType() {
+            // Given
+            String requestBody = createBlockActionRequestBody("UNKNOWN_LEAVE_TYPE");
+
+            // When & Then
+            assertThatThrownBy(() -> orchestrator.handleBlockAction(requestBody))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Unknown leave type: UNKNOWN_LEAVE_TYPE");
+        }
+    }
+
+    @Nested
+    @DisplayName("Modal Builder Tests")
+    class ModalBuilderTests {
+
+        @Test
+        @DisplayName("Should build Annual Leave modal with correct structure")
+        void shouldBuildAnnualLeaveModalWithCorrectStructure() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+
+            // When
+            SlackModalView modal = orchestrator.buildAnnualLeaveModal(slackRequest, TEST_THREAD_TS);
+
+            // Then
+            assertThat(modal).isNotNull();
+            assertThat(modal.getBlocks()).isNotNull();
+            assertThat(modal.getBlocks()).hasSize(5); // Leave type, duration, start date, end date, reason
+            assertThat(modal.getPrivateMetadata()).contains(TEST_THREAD_TS);
+            assertThat(modal.getPrivateMetadata()).contains(TEST_USER_ID);
+        }
+
+        @Test
+        @DisplayName("Should build Annual Leave modal with thread context")
+        void shouldBuildAnnualLeaveModalWithThreadContext() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+
+            // When
+            SlackModalView modal = orchestrator.buildAnnualLeaveModal(slackRequest, TEST_THREAD_TS);
+
+            // Then
+            assertThat(modal.getPrivateMetadata()).contains(TEST_THREAD_TS);
+            assertThat(modal.getPrivateMetadata()).contains(TEST_CHANNEL_ID);
+            assertThat(modal.getPrivateMetadata()).contains(TEST_CHANNEL_NAME);
+        }
+
+        @Test
+        @DisplayName("Should build Optional Holiday modal with correct structure")
+        void shouldBuildOptionalHolidayModalWithCorrectStructure() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            when(optionalHolidayService.getAllHolidaysAsSlackOptions())
+                    .thenReturn(java.util.List.of());
+
+            // When
+            SlackModalView modal = orchestrator.buildOptionalHolidayModal(slackRequest, TEST_THREAD_TS);
+
+            // Then
+            assertThat(modal).isNotNull();
+            assertThat(modal.getBlocks()).isNotNull();
+            assertThat(modal.getBlocks()).hasSize(2); // Leave type, holiday dropdown only
+            assertThat(modal.getPrivateMetadata()).contains(TEST_THREAD_TS);
+        }
+
+        @Test
+        @DisplayName("Should build Optional Holiday modal without duration fields")
+        void shouldBuildOptionalHolidayModalWithoutDurationFields() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            when(optionalHolidayService.getAllHolidaysAsSlackOptions())
+                    .thenReturn(java.util.List.of());
+
+            // When
+            SlackModalView modal = orchestrator.buildOptionalHolidayModal(slackRequest, TEST_THREAD_TS);
+
+            // Then
+            assertThat(modal).isNotNull();
+            // Verify that only 2 blocks exist (leave type and holiday dropdown)
+            // Duration fields (FIRST_HALF, SECOND_HALF) and date pickers should NOT be present
+            assertThat(modal.getBlocks()).hasSize(2);
+        }
+    }
+
     // Helper methods for test data creation
 
     private LeaveIngestionRequest createValidLeaveIngestionRequest(LeaveType type, LeaveDurationType duration) {
@@ -1161,6 +1480,222 @@ class SlackLeaveOrchestratorTest {
             return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new RuntimeException("Failed to URL encode", e);
+        }
+    }
+
+    private String createBlockActionRequestBody(String selectedLeaveType) {
+        try {
+            // Create metadata object
+            var metadata = Map.of(
+                "userId", TEST_USER_ID,
+                "channelId", TEST_CHANNEL_ID,
+                "channelName", TEST_CHANNEL_NAME,
+                "threadTs", TEST_THREAD_TS
+            );
+            String metadataJson = objectMapper.writeValueAsString(metadata);
+
+            // Build the block action payload
+            var payload = new java.util.LinkedHashMap<String, Object>();
+            payload.put("type", "block_actions");
+
+            var team = Map.of("id", "T12345", "domain", "example");
+            payload.put("team", team);
+
+            var user = Map.of(
+                "id", TEST_USER_ID,
+                "username", "testuser",
+                "name", "Test User",
+                "team_id", "T12345"
+            );
+            payload.put("user", user);
+
+            payload.put("api_app_id", "A12345");
+            payload.put("token", "verification_token");
+
+            // Create container with view_id
+            var container = new java.util.LinkedHashMap<String, Object>();
+            container.put("type", "view");
+            container.put("view_id", TEST_VIEW_ID);
+            payload.put("container", container);
+
+            // Create view with hash and metadata
+            var view = new java.util.LinkedHashMap<String, Object>();
+            view.put("id", TEST_VIEW_ID);
+            view.put("team_id", "T12345");
+            view.put("type", "modal");
+            view.put("hash", "test-hash");
+            view.put("private_metadata", metadataJson);
+            payload.put("view", view);
+
+            // Create action with selected option
+            var action = new java.util.LinkedHashMap<String, Object>();
+            action.put("action_id", "leave_type_category_action");
+            action.put("block_id", "leave_type_category_block");
+            action.put("type", "static_select");
+
+            var selectedOption = Map.of(
+                "text", Map.of("type", "plain_text", "text", selectedLeaveType),
+                "value", selectedLeaveType
+            );
+            action.put("selected_option", selectedOption);
+
+            payload.put("actions", java.util.List.of(action));
+
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            return "payload=" + urlEncode(jsonPayload);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create block action payload", e);
+        }
+    }
+
+    private String createBlockActionRequestBodyWithNullActions() {
+        try {
+            var payload = new java.util.LinkedHashMap<String, Object>();
+            payload.put("type", "block_actions");
+
+            var team = Map.of("id", "T12345", "domain", "example");
+            payload.put("team", team);
+
+            var user = Map.of(
+                "id", TEST_USER_ID,
+                "username", "testuser",
+                "name", "Test User",
+                "team_id", "T12345"
+            );
+            payload.put("user", user);
+
+            payload.put("api_app_id", "A12345");
+            payload.put("token", "verification_token");
+
+            var container = new java.util.LinkedHashMap<String, Object>();
+            container.put("type", "view");
+            container.put("view_id", TEST_VIEW_ID);
+            payload.put("container", container);
+
+            var view = new java.util.LinkedHashMap<String, Object>();
+            view.put("id", TEST_VIEW_ID);
+            view.put("team_id", "T12345");
+            view.put("type", "modal");
+            view.put("hash", "test-hash");
+            view.put("private_metadata", "{}");
+            payload.put("view", view);
+
+            payload.put("actions", null);
+
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            return "payload=" + urlEncode(jsonPayload);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create block action payload with null actions", e);
+        }
+    }
+
+    private String createBlockActionRequestBodyWithEmptyActions() {
+        try {
+            var payload = new java.util.LinkedHashMap<String, Object>();
+            payload.put("type", "block_actions");
+
+            var team = Map.of("id", "T12345", "domain", "example");
+            payload.put("team", team);
+
+            var user = Map.of(
+                "id", TEST_USER_ID,
+                "username", "testuser",
+                "name", "Test User",
+                "team_id", "T12345"
+            );
+            payload.put("user", user);
+
+            payload.put("api_app_id", "A12345");
+            payload.put("token", "verification_token");
+
+            var container = new java.util.LinkedHashMap<String, Object>();
+            container.put("type", "view");
+            container.put("view_id", TEST_VIEW_ID);
+            payload.put("container", container);
+
+            var view = new java.util.LinkedHashMap<String, Object>();
+            view.put("id", TEST_VIEW_ID);
+            view.put("team_id", "T12345");
+            view.put("type", "modal");
+            view.put("hash", "test-hash");
+            view.put("private_metadata", "{}");
+            payload.put("view", view);
+
+            payload.put("actions", java.util.List.of());
+
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            return "payload=" + urlEncode(jsonPayload);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create block action payload with empty actions", e);
+        }
+    }
+
+    private String createBlockActionRequestBodyWithUnknownActionId(String selectedLeaveType) {
+        try {
+            // Create metadata object
+            var metadata = Map.of(
+                "userId", TEST_USER_ID,
+                "channelId", TEST_CHANNEL_ID,
+                "channelName", TEST_CHANNEL_NAME,
+                "threadTs", TEST_THREAD_TS
+            );
+            String metadataJson = objectMapper.writeValueAsString(metadata);
+
+            // Build the block action payload
+            var payload = new java.util.LinkedHashMap<String, Object>();
+            payload.put("type", "block_actions");
+
+            var team = Map.of("id", "T12345", "domain", "example");
+            payload.put("team", team);
+
+            var user = Map.of(
+                "id", TEST_USER_ID,
+                "username", "testuser",
+                "name", "Test User",
+                "team_id", "T12345"
+            );
+            payload.put("user", user);
+
+            payload.put("api_app_id", "A12345");
+            payload.put("token", "verification_token");
+
+            // Create container with view_id
+            var container = new java.util.LinkedHashMap<String, Object>();
+            container.put("type", "view");
+            container.put("view_id", TEST_VIEW_ID);
+            payload.put("container", container);
+
+            // Create view with hash and metadata
+            var view = new java.util.LinkedHashMap<String, Object>();
+            view.put("id", TEST_VIEW_ID);
+            view.put("team_id", "T12345");
+            view.put("type", "modal");
+            view.put("hash", "test-hash");
+            view.put("private_metadata", metadataJson);
+            payload.put("view", view);
+
+            // Create action with UNKNOWN action_id
+            var action = new java.util.LinkedHashMap<String, Object>();
+            action.put("action_id", "unknown_action_id"); // Wrong action_id
+            action.put("block_id", "leave_type_category_block");
+            action.put("type", "static_select");
+
+            var selectedOption = Map.of(
+                "text", Map.of("type", "plain_text", "text", selectedLeaveType),
+                "value", selectedLeaveType
+            );
+            action.put("selected_option", selectedOption);
+
+            payload.put("actions", java.util.List.of(action));
+
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            return "payload=" + urlEncode(jsonPayload);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create block action payload with unknown action_id", e);
         }
     }
 }

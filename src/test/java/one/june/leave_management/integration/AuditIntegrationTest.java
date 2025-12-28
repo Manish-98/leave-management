@@ -28,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for Audit functionality.
  * Verifies that all requests and responses are properly logged to the audit_log table.
- *
  * Note: transactional=false is required because tests make HTTP requests via RestTemplate,
  * and the data needs to be committed to the database for the HTTP layer to see it.
  */

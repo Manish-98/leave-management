@@ -3,7 +3,6 @@ package one.june.leave_management.test.util;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.test.context.TestContext;
 import org.springframework.test.context.support.AbstractTestExecutionListener;
-import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -23,6 +22,7 @@ import java.sql.Statement;
  * <ol>
  *   <li>leave_source_ref (has foreign key to leave)</li>
  *   <li>leave (has no dependent tables)</li>
+ *   <li>optional_holidays (independent table)</li>
  *   <li>audit_log (independent table)</li>
  * </ol>
  */
@@ -30,7 +30,7 @@ import java.sql.Statement;
 public class IntegrationTestListener extends AbstractTestExecutionListener {
 
     @Override
-    public void afterTestMethod(TestContext testContext) throws Exception {
+    public void afterTestMethod(TestContext testContext) {
         // Check if the test class has @IntegrationTest annotation
         IntegrationTest integrationTest = testContext.getTestClass()
                 .getAnnotation(IntegrationTest.class);
@@ -77,6 +77,10 @@ public class IntegrationTestListener extends AbstractTestExecutionListener {
                 // leave table (no dependent tables)
                 statement.execute("DELETE FROM leave");
                 log.debug("Deleted all data from leave table");
+
+                // optional_holidays (independent table)
+                statement.execute("DELETE FROM optional_holidays");
+                log.debug("Deleted all data from optional_holidays table");
 
                 // audit_log (independent table)
                 statement.execute("DELETE FROM audit_log");

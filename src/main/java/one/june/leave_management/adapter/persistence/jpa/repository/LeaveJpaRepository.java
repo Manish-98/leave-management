@@ -43,7 +43,6 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
     /**
      * Find leaves by filters with pagination support.
      * All filters are optional - null values will be ignored.
-     *
      * Uses date range comparisons for year filtering to ensure compatibility with H2 database.
      *
      * @param userId optional user ID to filter by

@@ -1,5 +1,8 @@
 package one.june.leave_management.adapter.inbound.web.csv;
 
+import lombok.Getter;
+
+@Getter
 public class CsvValidationException extends RuntimeException {
 
     private final int lineNumber;
@@ -14,7 +17,4 @@ public class CsvValidationException extends RuntimeException {
         this.lineNumber = lineNumber;
     }
 
-    public int getLineNumber() {
-        return lineNumber;
-    }
 }

@@ -3,7 +3,6 @@ package one.june.leave_management.integration;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.common.model.DateRange;
-import one.june.leave_management.common.model.Quarter;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
@@ -27,7 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for Leave Fetch API.
  * Tests filtering, pagination, and sorting capabilities.
- *
  * Note: transactional=false is required because tests make HTTP requests via RestTemplate,
  * and the data needs to be committed to the database for the HTTP layer to see it.
  */

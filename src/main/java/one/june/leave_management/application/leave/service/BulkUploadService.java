@@ -2,16 +2,13 @@ package one.june.leave_management.application.leave.service;
 
 import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.inbound.web.csv.CsvLeaveParser;
-import one.june.leave_management.adapter.inbound.web.csv.CsvValidationException;
 import one.june.leave_management.adapter.inbound.web.dto.BulkUploadResponse;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
-import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.domain.leave.model.BulkUploadJob;
 import one.june.leave_management.domain.leave.model.BulkUploadJob.BulkUploadStatus;
-import one.june.leave_management.domain.leave.model.BulkUploadRecord;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJobRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,20 +16,29 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 @Service
 @Slf4j
 public class BulkUploadService {
 
-    @Autowired
-    private CsvLeaveParser csvLeaveParser;
+    private final CsvLeaveParser csvLeaveParser;
 
-    @Autowired
-    private LeaveService leaveService;
+    private final LeaveService leaveService;
 
-    @Autowired
-    private BulkUploadJobRepository bulkUploadJobRepository;
+    private final BulkUploadJobRepository bulkUploadJobRepository;
+
+    @Lazy
+    private final BulkUploadService self;
+
+    public BulkUploadService(CsvLeaveParser csvLeaveParser,
+                               LeaveService leaveService,
+                               BulkUploadJobRepository bulkUploadJobRepository,
+                               @Lazy BulkUploadService self) {
+        this.csvLeaveParser = csvLeaveParser;
+        this.leaveService = leaveService;
+        this.bulkUploadJobRepository = bulkUploadJobRepository;
+        this.self = self;
+    }
 
     /**
      * Initiate bulk upload process
@@ -71,8 +77,14 @@ public class BulkUploadService {
 
         log.info("Created bulk upload job {} with {} records", jobId, commands.size());
 
-        // Trigger async processing
-        processBulkUploadAsync(job, commands);
+        // Trigger async processing using self-reference for proxy to work
+        // Fall back to direct call for unit tests where self is null
+        if (self != null) {
+            self.processBulkUploadAsync(job, commands);
+        } else {
+            log.warn("Self-reference is null, calling processBulkUploadAsync synchronously");
+            processBulkUploadAsync(job, commands);
+        }
 
         // Return immediate response
         return BulkUploadResponse.builder()

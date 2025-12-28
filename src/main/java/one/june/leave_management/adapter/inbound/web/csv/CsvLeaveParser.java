@@ -26,7 +26,6 @@ import java.util.List;
 public class CsvLeaveParser {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final int EXPECTED_COLUMN_COUNT = 5;
 
     /**
      * Parse CSV file and convert to LeaveIngestionCommand list

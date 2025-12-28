@@ -9,6 +9,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 /**
  * DTO for OptionalHoliday.
@@ -23,7 +24,7 @@ import java.time.LocalDate;
 @EqualsAndHashCode(of = {"id", "date"})
 public class OptionalHolidayDto {
 
-    private Long id;
+    private UUID id;
     private LocalDate date;
     private String name;
     private String description;
