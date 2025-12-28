@@ -131,7 +131,7 @@ class SlackViewSubmissionIntegrationTest {
                             "values": {
                                 "leave_type_category_block": {
                                     "leave_type_category_action": {
-                                        "type": "radio_buttons",
+                                        "type": "static_select",
                                         "selected_option": {
                                             "text": {"type": "plain_text", "text": "Annual Leave"},
                                             "value": "ANNUAL_LEAVE"
@@ -207,8 +207,21 @@ class SlackViewSubmissionIntegrationTest {
 
     @Test
     void shouldCreateOptionalHolidayLeaveFromSlackViewSubmission() throws Exception {
-        // Given
-        String jsonPayload = """
+        // Given - Insert a test holiday first
+        jdbcTemplate.update(
+                "INSERT INTO optional_holidays (date, name, description, created_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "2024-07-10", "Test Holiday", "A test holiday for integration testing"
+        );
+
+        // Get the inserted holiday ID
+        Long holidayId = jdbcTemplate.queryForObject(
+                "SELECT id FROM optional_holidays WHERE date = ? AND name = ?",
+                Long.class,
+                "2024-07-10", "Test Holiday"
+        );
+        assertThat(holidayId).isNotNull();
+
+        String jsonPayload = String.format("""
                 {
                     "type": "view_submission",
                     "team": {"id": "T12345", "domain": "example"},
@@ -225,26 +238,20 @@ class SlackViewSubmissionIntegrationTest {
                             "values": {
                                 "leave_type_category_block": {
                                     "leave_type_category_action": {
-                                        "type": "radio_buttons",
+                                        "type": "static_select",
                                         "selected_option": {
                                             "text": {"type": "plain_text", "text": "Optional Holiday"},
                                             "value": "OPTIONAL_HOLIDAY"
                                         }
                                     }
                                 },
-                                "leave_duration_block": {
-                                    "leave_duration_action": {
-                                        "type": "radio_buttons",
+                                "holiday_select_block": {
+                                    "holiday_select_action": {
+                                        "type": "static_select",
                                         "selected_option": {
-                                            "text": {"type": "plain_text", "text": "First Half"},
-                                            "value": "FIRST_HALF"
+                                            "text": {"type": "plain_text", "text": "2024-07-10 - Test Holiday"},
+                                            "value": "%d"
                                         }
-                                    }
-                                },
-                                "start_date_block": {
-                                    "start_date_action": {
-                                        "type": "datepicker",
-                                        "selected_date": "2024-07-10"
                                     }
                                 }
                             }
@@ -253,7 +260,7 @@ class SlackViewSubmissionIntegrationTest {
                         "title": {"type": "plain_text", "text": "Apply for Leave"}
                     }
                 }
-                """;
+                """, holidayId);
 
         // When
         var response = restTemplate.postForEntity(
@@ -276,7 +283,7 @@ class SlackViewSubmissionIntegrationTest {
         assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 10));
         assertThat(leaveRecord.get("type")).isEqualTo("OPTIONAL_HOLIDAY");
         assertThat(leaveRecord.get("status")).isEqualTo("APPROVED");
-        assertThat(leaveRecord.get("duration_type")).isEqualTo("FIRST_HALF");
+        assertThat(leaveRecord.get("duration_type")).isEqualTo("FULL_DAY"); // Optional holidays default to FULL_DAY
 
         // Verify source reference
         String leaveId = leaveRecord.get("id").toString();
@@ -306,7 +313,7 @@ class SlackViewSubmissionIntegrationTest {
                             "values": {
                                 "leave_type_category_block": {
                                     "leave_type_category_action": {
-                                        "type": "radio_buttons",
+                                        "type": "static_select",
                                         "selected_option": {
                                             "text": {"type": "plain_text", "text": "Annual Leave"},
                                             "value": "ANNUAL_LEAVE"
@@ -387,7 +394,7 @@ class SlackViewSubmissionIntegrationTest {
                             "values": {
                                 "leave_type_category_block": {
                                     "leave_type_category_action": {
-                                        "type": "radio_buttons",
+                                        "type": "static_select",
                                         "selected_option": {
                                             "text": {"type": "plain_text", "text": "Annual Leave"},
                                             "value": "ANNUAL_LEAVE"
@@ -474,7 +481,7 @@ class SlackViewSubmissionIntegrationTest {
                             "values": {
                                 "leave_type_category_block": {
                                     "leave_type_category_action": {
-                                        "type": "radio_buttons",
+                                        "type": "static_select",
                                         "selected_option": {
                                             "text": {"type": "plain_text", "text": "Annual Leave"},
                                             "value": "ANNUAL_LEAVE"
@@ -549,7 +556,7 @@ class SlackViewSubmissionIntegrationTest {
                                 "values": {
                                     "leave_type_category_block": {
                                         "leave_type_category_action": {
-                                            "type": "radio_buttons",
+                                            "type": "static_select",
                                             "selected_option": {
                                                 "text": {"type": "plain_text", "text": "Annual Leave"},
                                                 "value": "ANNUAL_LEAVE"

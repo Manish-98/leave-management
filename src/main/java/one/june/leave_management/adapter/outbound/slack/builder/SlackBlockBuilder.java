@@ -1,10 +1,12 @@
 package one.june.leave_management.adapter.outbound.slack.builder;
 
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.SlackInputBlock;
+import one.june.leave_management.adapter.outbound.slack.dto.blocks.SlackSectionBlock;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackDatePickerElement;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackOption;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackPlainTextInputElement;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackRadioButtonsElement;
+import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackStaticSelectElement;
 import one.june.leave_management.adapter.outbound.slack.dto.composition.SlackText;
 
 import java.util.HashMap;
@@ -25,6 +27,53 @@ public class SlackBlockBuilder {
      * This is a convenience method for creating a radio buttons input block
      * with all the necessary components properly configured
      *
+     * @param blockId        The unique identifier for this block
+     * @param actionId       The action identifier for the radio buttons element
+     * @param labelText       The label text to display above the radio buttons
+     * @param options         The list of options to display
+     * @param initialValue    The value of the option that should be selected by default
+     * @param dispatchAction  Whether to trigger block_actions on change (optional, for dynamic modals)
+     * @return A configured SlackInputBlock with radio buttons element
+     */
+    public static SlackInputBlock radioButtonsInput(
+            String blockId,
+            String actionId,
+            String labelText,
+            List<SlackOption> options,
+            String initialValue,
+            Boolean dispatchAction) {
+
+        // Find the initial option from the list
+        SlackOption initialOption = options.stream()
+                .filter(opt -> opt.getValue().equals(initialValue))
+                .findFirst()
+                .orElse(null);
+
+        SlackRadioButtonsElement.SlackRadioButtonsElementBuilder builder =
+                SlackRadioButtonsElement.builder()
+                        .actionId(actionId)
+                        .options(options)
+                        .initialOption(initialOption);
+
+        // Set dispatch_action if provided (enables dynamic modal updates)
+        if (dispatchAction != null && dispatchAction) {
+            builder.dispatchActions(true);
+        }
+
+        return SlackInputBlock.builder()
+                .blockId(blockId)
+                .label(SlackText.plainText(labelText, true))
+                .element(builder.build())
+                .build();
+    }
+
+    /**
+     * Creates an input block with radio buttons element (without dispatch_action)
+     * <p>
+     * This is a convenience method for creating a radio buttons input block
+     * with all the necessary components properly configured.
+     * Does not enable dispatch_action (modal won't update on selection change).
+     *
      * @param blockId      The unique identifier for this block
      * @param actionId     The action identifier for the radio buttons element
      * @param labelText    The label text to display above the radio buttons
@@ -38,22 +87,7 @@ public class SlackBlockBuilder {
             String labelText,
             List<SlackOption> options,
             String initialValue) {
-
-        // Find the initial option from the list
-        SlackOption initialOption = options.stream()
-                .filter(opt -> opt.getValue().equals(initialValue))
-                .findFirst()
-                .orElse(null);
-
-        return SlackInputBlock.builder()
-                .blockId(blockId)
-                .label(SlackText.plainText(labelText, true))
-                .element(SlackRadioButtonsElement.builder()
-                        .actionId(actionId)
-                        .options(options)
-                        .initialOption(initialOption)
-                        .build())
-                .build();
+        return radioButtonsInput(blockId, actionId, labelText, options, initialValue, null);
     }
 
     /**
@@ -116,6 +150,60 @@ public class SlackBlockBuilder {
                         .multiline(multiline)
                         .build())
                 .optional(optional)
+                .build();
+    }
+
+    /**
+     * Creates an input block with static select dropdown element
+     * <p>
+     * This is a convenience method for creating a dropdown select input block.
+     * Users can select one option from a predefined list.
+     * <p>
+     * Slack API reference: <a href="https://api.slack.com/reference/block-kit/block-elements#static_select">...</a>
+     *
+     * @param blockId         The unique identifier for this block
+     * @param actionId        The action identifier for the select element
+     * @param labelText       The label text to display above the dropdown
+     * @param options         The list of options to display in the dropdown
+     * @param placeholderText The placeholder text to show when no option is selected (optional)
+     * @param initialValue    The value of the option that should be selected by default (optional)
+     * @return A configured SlackInputBlock with static select element
+     */
+    public static SlackInputBlock staticSelectInput(
+            String blockId,
+            String actionId,
+            String labelText,
+            List<SlackOption> options,
+            String placeholderText,
+            String initialValue) {
+
+        // Build the select element
+        SlackStaticSelectElement.SlackStaticSelectElementBuilder builder =
+                SlackStaticSelectElement.builder()
+                        .actionId(actionId)
+                        .options(options);
+
+        // Set placeholder if provided
+        if (placeholderText != null && !placeholderText.trim().isEmpty()) {
+            builder.placeholder(SlackText.plainText(placeholderText, true));
+        }
+
+        // Set initial option if provided
+        if (initialValue != null && !initialValue.trim().isEmpty()) {
+            SlackOption initialOption = options.stream()
+                    .filter(opt -> opt.getValue().equals(initialValue))
+                    .findFirst()
+                    .orElse(null);
+            if (initialOption != null) {
+                builder.initialOption(initialOption);
+            }
+        }
+
+        return SlackInputBlock.builder()
+                .blockId(blockId)
+                .label(SlackText.plainText(labelText, true))
+                .element(builder.build())
+                .optional(false) // Select is required by default
                 .build();
     }
 
@@ -236,5 +324,57 @@ public class SlackBlockBuilder {
 
         block.put("elements", List.of(textObj));
         return block;
+    }
+
+    // ========== Section Block Methods for Modals ==========
+
+    /**
+     * Creates a section block with a radio buttons accessory
+     * <p>
+     * This creates a section block that displays text and includes radio buttons
+     * as an interactive accessory. Unlike input blocks, section blocks with
+     * accessories support dispatch_action in modals, enabling dynamic updates.
+     * <p>
+     * Use this for leave type selection, where you want the modal to update
+     * immediately when the user changes their selection.
+     *
+     * @param blockId        The unique identifier for this block
+     * @param labelMarkdown  The label text (markdown formatted, e.g., "*Leave Type*")
+     * @param radioButtons   The radio buttons element to include as accessory
+     * @return A configured SlackSectionBlock
+     */
+    public static SlackSectionBlock sectionWithRadioButtons(
+            String blockId,
+            String labelMarkdown,
+            SlackRadioButtonsElement radioButtons) {
+        return SlackSectionBlock.builder()
+                .blockId(blockId)
+                .text(SlackText.markdown(labelMarkdown))
+                .accessory(radioButtons)
+                .build();
+    }
+
+    /**
+     * Creates a section block with a static select accessory
+     * <p>
+     * This creates a section block that displays text and includes a dropdown
+     * menu as an interactive accessory. Supports dispatch_action in modals.
+     * <p>
+     * Use this for selections where you want dynamic modal updates.
+     *
+     * @param blockId      The unique identifier for this block
+     * @param labelMarkdown The label text (markdown formatted)
+     * @param selectElement The static select element to include as accessory
+     * @return A configured SlackSectionBlock
+     */
+    public static SlackSectionBlock sectionWithStaticSelect(
+            String blockId,
+            String labelMarkdown,
+            SlackStaticSelectElement selectElement) {
+        return SlackSectionBlock.builder()
+                .blockId(blockId)
+                .text(SlackText.markdown(labelMarkdown))
+                .accessory(selectElement)
+                .build();
     }
 }

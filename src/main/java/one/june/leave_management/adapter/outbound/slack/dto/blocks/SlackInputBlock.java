@@ -24,7 +24,7 @@ import one.june.leave_management.adapter.outbound.slack.dto.composition.SlackTex
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({"type", "block_id", "label", "element", "hint", "optional", "dispatch_action"})
+@JsonPropertyOrder({"type", "block_id", "label", "element", "hint", "optional", "dispatch_actions"})
 public class SlackInputBlock {
 
     /**
@@ -74,6 +74,6 @@ public class SlackInputBlock {
      * A boolean that triggers the modal to submit when the user changes the input
      * Defaults to false
      */
-    @JsonProperty("dispatch_action")
-    private Boolean dispatchAction;
+    @JsonProperty("dispatch_actions")
+    private Boolean dispatchActions;
 }

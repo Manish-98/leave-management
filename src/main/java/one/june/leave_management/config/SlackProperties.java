@@ -55,4 +55,11 @@ public class SlackProperties {
      */
     @Builder.Default
     private String viewsOpenEndpoint = "/views.open";
+
+    /**
+     * Slack views.update API endpoint path
+     * Can be overridden for testing or different API versions
+     */
+    @Builder.Default
+    private String viewsUpdateEndpoint = "/views.update";
 }

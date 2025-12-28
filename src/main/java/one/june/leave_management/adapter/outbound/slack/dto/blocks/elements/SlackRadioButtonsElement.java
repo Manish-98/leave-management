@@ -27,7 +27,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({"type", "action_id", "options", "initial_option"})
+@JsonPropertyOrder({"type", "action_id", "options", "initial_option", "dispatch_actions"})
 public class SlackRadioButtonsElement {
 
     /**
@@ -57,4 +57,11 @@ public class SlackRadioButtonsElement {
      */
     @JsonProperty("initial_option")
     private SlackOption initialOption;
+
+    /**
+     * Whether to trigger a block_actions event when the user changes the selection
+     * When true, the modal will update immediately when user selects a different option
+     */
+    @JsonProperty("dispatch_actions")
+    private Boolean dispatchActions;
 }

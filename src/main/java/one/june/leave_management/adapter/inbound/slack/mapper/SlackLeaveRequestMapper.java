@@ -5,11 +5,13 @@ import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionValue
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewSubmissionRequest;
 import one.june.leave_management.adapter.inbound.slack.util.SlackMetadataUtil;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
+import one.june.leave_management.application.leave.service.OptionalHolidayService;
 import one.june.leave_management.common.exception.SlackPayloadParseException;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
+import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import one.june.leave_management.domain.leave.model.SourceType;
 import org.springframework.stereotype.Component;
 
@@ -25,14 +27,23 @@ import java.util.Map;
  * The mapping extracts:
  * - userId from private_metadata (Slack user ID)
  * - leave type category (ANNUAL_LEAVE or OPTIONAL_HOLIDAY)
- * - leave duration (FULL_DAY, FIRST_HALF, or SECOND_HALF)
- * - start date
- * - end date (optional - defaults to start date if not provided)
- * - reason (optional)
+ * - For ANNUAL_LEAVE: leave duration, start date, end date, reason
+ * - For OPTIONAL_HOLIDAY: selected holiday ID (fetches date from database)
+ * <p>
+ * For optional holidays:
+ * - startDate and endDate are set to the holiday's date
+ * - durationType defaults to FULL_DAY
+ * - No reason field is collected
  */
 @Slf4j
 @Component
 public class SlackLeaveRequestMapper {
+
+    private final OptionalHolidayService optionalHolidayService;
+
+    public SlackLeaveRequestMapper(OptionalHolidayService optionalHolidayService) {
+        this.optionalHolidayService = optionalHolidayService;
+    }
 
     private static final String BLOCK_LEAVE_TYPE = "leave_type_category_block";
     private static final String ACTION_LEAVE_TYPE = "leave_type_category_action";
@@ -44,6 +55,8 @@ public class SlackLeaveRequestMapper {
     private static final String ACTION_END_DATE = "end_date_action";
     private static final String BLOCK_REASON = "reason_block";
     private static final String ACTION_REASON = "reason_action";
+    private static final String BLOCK_HOLIDAY_SELECT = "holiday_select_block";
+    private static final String ACTION_HOLIDAY_SELECT = "holiday_select_action";
 
     /**
      * Maps a Slack view submission request to a leave ingestion request
@@ -53,17 +66,27 @@ public class SlackLeaveRequestMapper {
      *   <li>sourceType: SLACK</li>
      *   <li>sourceId: Set to view.id (will be overridden in LeaveService call)</li>
      *   <li>userId: From private_metadata (Slack user ID)</li>
-     *   <li>dateRange: From start_date and end_date fields</li>
      *   <li>type: From leave_type_category_action (ANNUAL_LEAVE or OPTIONAL_HOLIDAY)</li>
      *   <li>status: APPROVED (Slack requests are pre-approved)</li>
+     * </ul>
+     * <p>
+     * For ANNUAL_LEAVE:
+     * <ul>
+     *   <li>dateRange: From start_date and end_date fields</li>
      *   <li>durationType: From leave_duration_action (FULL_DAY, FIRST_HALF, or SECOND_HALF)</li>
+     * </ul>
+     * <p>
+     * For OPTIONAL_HOLIDAY:
+     * <ul>
+     *   <li>dateRange: From holiday date fetched from database (startDate = endDate = holiday.date)</li>
+     *   <li>durationType: FULL_DAY (default)</li>
      * </ul>
      *
      * @param submission The Slack view submission request
      * @return Mapped LeaveIngestionRequest
      * @throws SlackPayloadParseException if required fields are missing or invalid
      */
-    public static LeaveIngestionRequest toLeaveIngestionRequest(SlackViewSubmissionRequest submission) {
+    public LeaveIngestionRequest toLeaveIngestionRequest(SlackViewSubmissionRequest submission) {
         var view = submission.getView();
         var stateValues = view.getState().getValues();
 
@@ -76,37 +99,69 @@ public class SlackLeaveRequestMapper {
         LeaveType leaveType = LeaveType.valueOf(leaveTypeValue);
         log.debug("Extracted leave type: {}", leaveType);
 
-        // Extract leave duration (FULL_DAY, FIRST_HALF, or SECOND_HALF)
-        String durationValue = getSelectedValue(stateValues, BLOCK_DURATION, ACTION_DURATION);
-        LeaveDurationType durationType = LeaveDurationType.valueOf(durationValue);
-        log.debug("Extracted duration type: {}", durationType);
-
-        // Extract start date
-        String startDateStr = getSelectedDate(stateValues, BLOCK_START_DATE, ACTION_START_DATE);
-        LocalDate startDate = LocalDate.parse(startDateStr);
-        log.debug("Extracted start date: {}", startDate);
-
-        // Extract end date (optional - if not provided, use start date)
-        String endDateStr = getSelectedDate(stateValues, BLOCK_END_DATE, ACTION_END_DATE);
-        LocalDate endDate = (endDateStr != null) ? LocalDate.parse(endDateStr) : startDate;
-        log.debug("Extracted end date: {}", endDate);
-
-        // Extract reason (optional)
-        String reason = getTextValue(stateValues, BLOCK_REASON, ACTION_REASON);
-        log.debug("Extracted reason: {}", reason);
-
-        return LeaveIngestionRequest.builder()
+        // Build the base request
+        LeaveIngestionRequest.LeaveIngestionRequestBuilder builder = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.SLACK)
                 .sourceId(view.getId()) // Will use view ID as source ID
                 .userId(userId)
-                .dateRange(DateRange.builder()
-                        .startDate(startDate)
-                        .endDate(endDate)
-                        .build())
                 .type(leaveType)
-                .status(LeaveStatus.APPROVED)
-                .durationType(durationType)
-                .build();
+                .status(LeaveStatus.APPROVED);
+
+        // Handle different leave types
+        if (leaveType == LeaveType.OPTIONAL_HOLIDAY) {
+            // Extract holiday ID from dropdown
+            String holidayIdStr = getSelectedValue(stateValues, BLOCK_HOLIDAY_SELECT, ACTION_HOLIDAY_SELECT);
+            Long holidayId = Long.parseLong(holidayIdStr);
+            log.debug("Extracted holiday ID: {}", holidayId);
+
+            // Fetch holiday from database
+            OptionalHoliday holiday = optionalHolidayService.findById(holidayId)
+                    .orElseThrow(() -> new SlackPayloadParseException(
+                            String.format("Holiday with ID %s not found", holidayId)));
+
+            LocalDate holidayDate = holiday.getDate();
+            log.debug("Fetched holiday date: {} for holiday: {}", holidayDate, holiday.getName());
+
+            // Set date range to the holiday's single date
+            builder.dateRange(DateRange.builder()
+                    .startDate(holidayDate)
+                    .endDate(holidayDate)
+                    .build());
+
+            // Set duration to FULL_DAY
+            builder.durationType(LeaveDurationType.FULL_DAY);
+
+        } else {
+            // ANNUAL_LEAVE or other types with date pickers and duration
+
+            // Extract leave duration (FULL_DAY, FIRST_HALF, or SECOND_HALF)
+            String durationValue = getSelectedValue(stateValues, BLOCK_DURATION, ACTION_DURATION);
+            LeaveDurationType durationType = LeaveDurationType.valueOf(durationValue);
+            log.debug("Extracted duration type: {}", durationType);
+            builder.durationType(durationType);
+
+            // Extract start date
+            String startDateStr = getSelectedDate(stateValues, BLOCK_START_DATE, ACTION_START_DATE);
+            LocalDate startDate = LocalDate.parse(startDateStr);
+            log.debug("Extracted start date: {}", startDate);
+
+            // Extract end date (optional - if not provided, use start date)
+            String endDateStr = getSelectedDate(stateValues, BLOCK_END_DATE, ACTION_END_DATE);
+            LocalDate endDate = (endDateStr != null) ? LocalDate.parse(endDateStr) : startDate;
+            log.debug("Extracted end date: {}", endDate);
+
+            builder.dateRange(DateRange.builder()
+                    .startDate(startDate)
+                    .endDate(endDate)
+                    .build());
+
+            // Extract reason (optional) - only for annual leave
+            String reason = getTextValue(stateValues, BLOCK_REASON, ACTION_REASON);
+            log.debug("Extracted reason: {}", reason);
+            // Note: reason field is not currently stored in LeaveIngestionRequest
+        }
+
+        return builder.build();
     }
 
     /**

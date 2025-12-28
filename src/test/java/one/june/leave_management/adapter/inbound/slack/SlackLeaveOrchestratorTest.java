@@ -12,7 +12,9 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenRespons
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveService;
+import one.june.leave_management.application.leave.service.OptionalHolidayService;
 import one.june.leave_management.common.mapper.LeaveMapper;
+import one.june.leave_management.adapter.inbound.slack.mapper.SlackLeaveRequestMapper;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
@@ -63,6 +65,12 @@ class SlackLeaveOrchestratorTest {
     @Mock
     private SlackApiClient slackApiClient;
 
+    @Mock
+    private OptionalHolidayService optionalHolidayService;
+
+    @Mock
+    private SlackLeaveRequestMapper slackLeaveRequestMapper;
+
     private SlackLeaveOrchestrator orchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -77,7 +85,13 @@ class SlackLeaveOrchestratorTest {
 
     @BeforeEach
     void setUp() {
-        orchestrator = new SlackLeaveOrchestrator(leaveService, leaveMapper, slackApiClient);
+        orchestrator = new SlackLeaveOrchestrator(
+                leaveService,
+                leaveMapper,
+                slackApiClient,
+                optionalHolidayService,
+                slackLeaveRequestMapper
+        );
     }
 
     @Nested
@@ -384,6 +398,56 @@ class SlackLeaveOrchestratorTest {
     @Nested
     @DisplayName("handleViewSubmission Tests")
     class HandleViewSubmissionTests {
+
+        @BeforeEach
+        void setUp() {
+            // Mock the mapper to return valid LeaveIngestionRequest based on the request type
+            lenient().when(slackLeaveRequestMapper.toLeaveIngestionRequest(any()))
+                    .thenAnswer(invocation -> {
+                        SlackViewSubmissionRequest request = invocation.getArgument(0);
+                        // Extract the leave type from the state values
+                        var stateValues = request.getView().getState().getValues();
+                        var leaveTypeBlock = stateValues.get("leave_type_category_block");
+                        var leaveTypeAction = leaveTypeBlock.get("leave_type_category_action");
+                        String selectedValue = leaveTypeAction.getSelectedOption().getValue();
+                        LeaveType leaveType = LeaveType.valueOf(selectedValue);
+
+                        // Extract the duration from the state values (only for ANNUAL_LEAVE)
+                        LeaveDurationType duration = LeaveDurationType.FULL_DAY; // default
+                        if (leaveType == LeaveType.ANNUAL_LEAVE) {
+                            var durationBlock = stateValues.get("leave_duration_block");
+                            var durationAction = durationBlock.get("leave_duration_action");
+                            String durationValue = durationAction.getSelectedOption().getValue();
+                            duration = LeaveDurationType.valueOf(durationValue);
+                        }
+
+                        // Extract dates from the state values (only for ANNUAL_LEAVE)
+                        LocalDate startDate = null;
+                        LocalDate endDate = null;
+                        if (leaveType == LeaveType.ANNUAL_LEAVE) {
+                            var startDateBlock = stateValues.get("start_date_block");
+                            var startDateAction = startDateBlock.get("start_date_action");
+                            startDate = LocalDate.parse(startDateAction.getSelectedDate());
+
+                            // Check if end date exists
+                            if (stateValues.containsKey("end_date_block")) {
+                                var endDateBlock = stateValues.get("end_date_block");
+                                var endDateAction = endDateBlock.get("end_date_action");
+                                if (endDateAction.getSelectedDate() != null) {
+                                    endDate = LocalDate.parse(endDateAction.getSelectedDate());
+                                }
+                            }
+
+                            // If no end date, set it equal to start date
+                            if (endDate == null) {
+                                endDate = startDate;
+                            }
+                        }
+
+                        // Create the LeaveIngestionRequest
+                        return createValidLeaveIngestionRequest(leaveType, duration, startDate, endDate);
+                    });
+        }
 
         @Test
         @DisplayName("Should successfully process valid view submission")
@@ -777,6 +841,17 @@ class SlackLeaveOrchestratorTest {
         request.setType(type);
         request.setDurationType(duration);
         request.setDateRange(new DateRange(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 5)));
+        request.setSourceType(SourceType.SLACK);
+        request.setSourceId("slack-source-123");
+        return request;
+    }
+
+    private LeaveIngestionRequest createValidLeaveIngestionRequest(LeaveType type, LeaveDurationType duration, LocalDate startDate, LocalDate endDate) {
+        LeaveIngestionRequest request = new LeaveIngestionRequest();
+        request.setUserId(TEST_USER_ID);
+        request.setType(type);
+        request.setDurationType(duration);
+        request.setDateRange(new DateRange(startDate, endDate));
         request.setSourceType(SourceType.SLACK);
         request.setSourceId("slack-source-123");
         return request;

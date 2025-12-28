@@ -56,13 +56,15 @@ public class SlackRequestSignatureVerifier {
         // Verify the signature
         String expectedSignature = "v0=" + generateSignature(timestamp, requestBody);
 
-        log.debug("Signature: {}, expected: {}", signature, expectedSignature);
+        log.info("Signature verification - Received: {}, Expected: {}, Body length: {}",
+                signature, expectedSignature, requestBody.length());
 
         if (!signature.equals(expectedSignature)) {
+            log.error("Signature mismatch! Request body: {}", requestBody);
             throw new SlackSignatureVerificationException("Invalid signature");
         }
 
-        log.debug("Slack signature verified successfully");
+        log.info("Slack signature verified successfully");
     }
 
     /**

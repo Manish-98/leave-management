@@ -7,6 +7,8 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageResponse
 import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenResponse;
+import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateRequest;
+import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateResponse;
 import one.june.leave_management.config.SlackProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
@@ -87,7 +89,25 @@ public class SlackApiClient {
             // Create the HTTP entity with headers and body
             HttpEntity<SlackViewOpenRequest> entity = new HttpEntity<>(request, headers);
 
-            log.debug("Sending request to Slack API...");
+            log.info("Sending request to Slack API: trigger_id={}", triggerId);
+
+            // Log the view blocks for debugging
+            if (request.getView() != null && request.getView().getBlocks() != null) {
+                log.info("Number of blocks in view: {}", request.getView().getBlocks().size());
+                for (int i = 0; i < request.getView().getBlocks().size(); i++) {
+                    Object block = request.getView().getBlocks().get(i);
+                    log.info("Block {}: {}", i, block);
+                }
+            }
+
+            // Log the full JSON payload for debugging
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                String jsonPayload = mapper.writeValueAsString(request);
+                log.info("Full JSON payload sent to Slack:\n{}", jsonPayload);
+            } catch (Exception e) {
+                log.warn("Could not serialize request to JSON for logging: {}", e.getMessage());
+            }
 
             // Make the API call
             ResponseEntity<SlackViewOpenResponse> responseEntity = restTemplate.exchange(
@@ -121,6 +141,126 @@ public class SlackApiClient {
             throw new RuntimeException("HTTP error calling Slack API: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Unexpected error calling Slack views.open API. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("Unexpected error calling Slack API: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Updates a modal view in Slack using the views.update API
+     * <p>
+     * This method calls the Slack API to update an already-open modal.
+     * It's used for dynamically changing modal content based on user interactions.
+     * <p>
+     * IMPORTANT: views.update requires a COMPLETE modal definition, not a partial patch.
+     * Include: type, title, blocks, submit, close, notify_on_close, clear_on_close, callback_id, private_metadata.
+     * Note: external_id is ONLY valid for views.open and cannot be changed after creation.
+     * <p>
+     * Slack API reference: <a href="https://api.slack.com/methods/views.update">...</a>
+     *
+     * @param viewId      The ID of the view to update
+     * @param updatedView The updated modal view definition
+     * @param viewHash    The hash from the block action interaction (prevents race conditions)
+     * @return The response from Slack API
+     * @throws RuntimeException if the API call fails
+     */
+    public SlackViewUpdateResponse updateModal(String viewId, SlackModalView updatedView, String viewHash) {
+        log.info("Updating modal in Slack with view_id: {}, hash: {}", viewId, viewHash);
+
+        String botToken = slackProperties.getBotToken();
+
+        // Validate inputs
+        if (botToken == null || botToken.trim().isEmpty()) {
+            log.error("Slack bot token is null or empty. Please configure slack.bot-token property.");
+            throw new RuntimeException("Slack bot token is not configured");
+        }
+
+        if (viewId == null || viewId.trim().isEmpty()) {
+            log.error("View ID is null or empty");
+            throw new RuntimeException("View ID cannot be null or empty");
+        }
+
+        if (updatedView == null) {
+            log.error("Updated view is null");
+            throw new RuntimeException("Updated view cannot be null");
+        }
+
+        // Convert SlackModalView to SlackViewUpdateRequest.SlackModalViewUpdate
+        // Include all modal fields valid for views.update (no external_id - that's only for views.open)
+        SlackViewUpdateRequest.SlackModalViewUpdate modalViewUpdate =
+                SlackViewUpdateRequest.SlackModalViewUpdate.builder()
+                        .type(updatedView.getType())
+                        .title(updatedView.getTitle())
+                        .blocks(updatedView.getBlocks())
+                        .privateMetadata(updatedView.getPrivateMetadata())
+                        .callbackId(updatedView.getCallbackId())
+                        .submit(updatedView.getSubmit())
+                        .close(updatedView.getClose())
+                        .notifyOnClose(updatedView.getNotifyOnClose())
+                        .clearOnClose(updatedView.getClearOnClose())
+                        .build();
+
+        SlackViewUpdateRequest request = SlackViewUpdateRequest.builder()
+                .viewId(viewId)
+                .view(modalViewUpdate)
+                .hash(viewHash) // Include hash from interaction to prevent race conditions
+                .build();
+
+        String fullApiUrl = slackProperties.getApiBaseUrl() + slackProperties.getViewsUpdateEndpoint();
+
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String jsonPayload = mapper.writeValueAsString(request);
+            log.info("Full JSON payload sent to Slack:\n{}", jsonPayload);
+        } catch (Exception e) {
+            log.warn("Could not serialize request to JSON for logging: {}", e.getMessage());
+        }
+
+
+        try {
+            // Set up headers with authorization and content type
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("application/json; charset=UTF-8"));
+            headers.setBearerAuth(botToken);
+
+            // Create the HTTP entity with headers and body
+            HttpEntity<SlackViewUpdateRequest> entity = new HttpEntity<>(request, headers);
+
+            log.debug("Sending update request to Slack API...");
+
+            // Make the API call
+            ResponseEntity<SlackViewUpdateResponse> responseEntity = restTemplate.exchange(
+                    fullApiUrl,
+                    HttpMethod.POST,
+                    entity,
+                    SlackViewUpdateResponse.class
+            );
+
+            log.debug("Received update response from Slack API. Status: {}", responseEntity.getStatusCode());
+
+            SlackViewUpdateResponse response = responseEntity.getBody();
+
+            if (response == null) {
+                log.error("Received null response body from Slack views.update API");
+                throw new RuntimeException("Null response from Slack API");
+            }
+
+            if (!response.getOk()) {
+                log.error("Slack views.update API returned error: {}. Full response: {}",
+                        response.getError(), response);
+                throw new RuntimeException("Slack API error: " + response.getError());
+            }
+
+            log.info("Successfully updated modal. View ID: {}",
+                    response.getView() != null ? response.getView().getId() : viewId);
+            return response;
+
+        } catch (RestClientException e) {
+            log.error("HTTP error calling Slack views.update API. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("HTTP error calling Slack API: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Unexpected error calling Slack views.update API. Type: {}, Message: {}",
                     e.getClass().getName(), e.getMessage(), e);
             throw new RuntimeException("Unexpected error calling Slack API: " + e.getMessage(), e);
         }

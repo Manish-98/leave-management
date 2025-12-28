@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -46,12 +47,13 @@ public class SlackViewSubmissionController {
     }
 
     /**
-     * Handles Slack interactions from modal submits and cancellations
+     * Handles Slack interactions from modal submits, cancellations, and block actions
      * <p>
      * Routes requests based on the type field in the payload:
      * <ul>
      *   <li>"view_submission": User submitted the leave form → triggers async processing</li>
      *   <li>"view_closed": User closed the modal without submitting → posts cancellation message</li>
+     *   <li>"block_actions": User interacted with a block element (e.g., changed leave type) → updates modal</li>
      * </ul>
      * <p>
      * Process:
@@ -60,23 +62,21 @@ public class SlackViewSubmissionController {
      *   <li>Verify Slack signature to ensure request is from Slack</li>
      *   <li>Extract type field from payload</li>
      *   <li>Route to appropriate handler in orchestrator based on type</li>
-     *   <li>Return empty response (Slack closes modal automatically)</li>
+     *   <li>Return empty response (Slack closes modal automatically for submissions)</li>
      * </ol>
      * <p>
      * All exceptions are handled by the global exception handler, which returns
      * 200 OK to prevent Slack from retrying failed requests.
      *
      * @param request The HTTP request from Slack
-     * @param rawBody The raw request body for signature verification
+//     * @param rawBody The raw request body for signature verification
      * @return ResponseEntity with empty body (Slack expects empty response for view_submission)
      */
     @PostMapping("/interactions")
     @Auditable("Slack view submission endpoint")
-    public ResponseEntity<?> handleInteraction(
-            HttpServletRequest request,
-            @RequestBody byte[] rawBody
-    ) {
-        String requestBody = new String(rawBody, StandardCharsets.UTF_8);
+    public ResponseEntity<?> handleInteraction(HttpServletRequest request) throws IOException {
+        byte[] raw = request.getInputStream().readAllBytes();
+        String requestBody = new String(raw, StandardCharsets.UTF_8);
         log.info("Received Slack interaction");
 
         // Step 1: Verify signature to ensure request is from Slack
@@ -97,6 +97,10 @@ public class SlackViewSubmissionController {
             case "view_closed" -> {
                 log.debug("Routing view_closed to orchestrator");
                 slackLeaveOrchestrator.handleViewClosed(requestBody);
+            }
+            case "block_actions" -> {
+                log.debug("Routing block_actions to orchestrator");
+                slackLeaveOrchestrator.handleBlockAction(requestBody);
             }
             default -> {
                 log.warn("Unknown interaction type: {}", type);
