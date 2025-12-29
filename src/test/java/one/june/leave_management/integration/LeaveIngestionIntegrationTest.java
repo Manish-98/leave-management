@@ -1,7 +1,9 @@
 package one.june.leave_management.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import one.june.leave_management.adapter.inbound.web.dto.CreateOptionalHolidayRequest;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
+import one.june.leave_management.application.leave.dto.OptionalHolidayDto;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
@@ -16,6 +18,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
@@ -23,6 +26,7 @@ import org.springframework.web.client.RestTemplate;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -60,6 +64,32 @@ class LeaveIngestionIntegrationTest {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBasicAuth("test", "test");
         return new HttpEntity<>(request, headers);
+    }
+
+    /**
+     * Helper method to create an optional holiday via API.
+     * This avoids transaction isolation issues when creating test data.
+     */
+    private void createOptionalHolidayViaApi(LocalDate date, String name, String description) {
+        String optionalHolidayBaseUrl = "http://localhost:" + port + "/api/admin/optional-holidays";
+
+        CreateOptionalHolidayRequest request = CreateOptionalHolidayRequest.builder()
+                .date(date)
+                .name(name)
+                .description(description)
+                .build();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<CreateOptionalHolidayRequest> entity = new HttpEntity<>(request, headers);
+
+        ResponseEntity<OptionalHolidayDto> response = restTemplate.postForEntity(
+                optionalHolidayBaseUrl,
+                entity,
+                OptionalHolidayDto.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }
 
     /**
@@ -174,7 +204,7 @@ class LeaveIngestionIntegrationTest {
                         .startDate(FIXED_DATE.plusDays(20))
                         .endDate(FIXED_DATE.plusDays(25))
                         .build())
-                .type(LeaveType.OPTIONAL_HOLIDAY) // Different type
+                .type(LeaveType.ANNUAL_LEAVE) // Changed from OPTIONAL_HOLIDAY to avoid validation requirement
                 .status(LeaveStatus.APPROVED) // Different status
                 .durationType(LeaveDurationType.FULL_DAY)
                 .build();
@@ -184,14 +214,14 @@ class LeaveIngestionIntegrationTest {
         assertThat(secondResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         String secondBody = secondResponse.getBody();
         assertThat(secondBody).contains("\"id\":\"" + leaveId + "\""); // Same ID
-        assertThat(secondBody).contains("\"type\":\"OPTIONAL_HOLIDAY\"");
+        assertThat(secondBody).contains("\"type\":\"ANNUAL_LEAVE\"");
         assertThat(secondBody).contains("\"status\":\"APPROVED\"");
 
         // Verify update in database - same leave ID but updated values
         Map<String, Object> updatedRecord = getLeaveFromDatabase("user-456", "2024-07-05", "2024-07-10");
         assertThat(updatedRecord).isNotNull();
         assertThat(updatedRecord.get("id").toString()).isEqualTo(leaveId); // Same ID
-        assertThat(updatedRecord.get("type")).isEqualTo("OPTIONAL_HOLIDAY");
+        assertThat(updatedRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
         assertThat(updatedRecord.get("status")).isEqualTo("APPROVED");
         assertThat(((java.sql.Date) updatedRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 5));
         assertThat(((java.sql.Date) updatedRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 10));
@@ -352,13 +382,22 @@ class LeaveIngestionIntegrationTest {
     void ingestLeaveShouldHandleAllLeaveTypes() {
         int dayOffset = 0;
         for (LeaveType leaveType : LeaveType.values()) {
+            LocalDate startDate = FIXED_DATE.plusDays(1 + dayOffset * 10);
+            LocalDate endDate = FIXED_DATE.plusDays(2 + dayOffset * 10);
+
+            // For optional holidays, create a single-day holiday in the database first
+            if (leaveType == LeaveType.OPTIONAL_HOLIDAY) {
+                endDate = startDate; // Single day
+                createOptionalHolidayViaApi(startDate, "Test Holiday for All Types", "Auto-generated for test");
+            }
+
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                     .sourceType(SourceType.WEB)
                     .sourceId("web-type-" + leaveType.name())
                     .userId("user-all-types")
                     .dateRange(DateRange.builder()
-                            .startDate(FIXED_DATE.plusDays(1 + dayOffset * 10))
-                            .endDate(FIXED_DATE.plusDays(2 + dayOffset * 10))
+                            .startDate(startDate)
+                            .endDate(endDate)
                             .build())
                     .type(leaveType)
                     .status(LeaveStatus.REQUESTED)
@@ -556,5 +595,115 @@ class LeaveIngestionIntegrationTest {
 
         assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(exception.getResponseBodyAsString()).contains("already has a leave");
+    }
+
+    // Optional Holiday Validation Tests
+
+    @Test
+    void ingestOptionalHolidayShouldAcceptWhenDateExistsInDatabase() {
+        LocalDate holidayDate = FIXED_DATE.plusDays(5);
+
+        // First, create an optional holiday via API
+        createOptionalHolidayViaApi(holidayDate, "Test Holiday", "Test holiday description");
+
+        // Now try to create an optional holiday leave for that date
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-optional-holiday-valid")
+                .userId("user-optional-holiday-valid")
+                .dateRange(DateRange.builder()
+                        .startDate(holidayDate)
+                        .endDate(holidayDate) // Single day
+                        .build())
+                .type(LeaveType.OPTIONAL_HOLIDAY)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        var response = restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).contains("\"type\":\"OPTIONAL_HOLIDAY\"");
+        assertThat(response.getBody()).contains("\"status\":\"REQUESTED\"");
+    }
+
+    @Test
+    void ingestOptionalHolidayShouldRejectWhenDateNotInDatabase() {
+        LocalDate nonExistentDate = FIXED_DATE.plusDays(10);
+
+        // Do NOT create this date in the optional_holidays table
+
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-optional-holiday-invalid")
+                .userId("user-optional-holiday-invalid")
+                .dateRange(DateRange.builder()
+                        .startDate(nonExistentDate)
+                        .endDate(nonExistentDate) // Single day
+                        .build())
+                .type(LeaveType.OPTIONAL_HOLIDAY)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        HttpClientErrorException exception = assertThrows(HttpClientErrorException.class,
+                () -> restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class));
+
+        assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(exception.getResponseBodyAsString()).contains("is not a valid optional holiday");
+    }
+
+    @Test
+    void ingestOptionalHolidayShouldRejectMultiDayRequest() {
+        LocalDate startDate = FIXED_DATE.plusDays(5);
+        LocalDate endDate = FIXED_DATE.plusDays(7);
+
+        // Create optional holidays for both dates via API
+        createOptionalHolidayViaApi(startDate, "Test Holiday 1", "Description 1");
+        createOptionalHolidayViaApi(endDate, "Test Holiday 2", "Description 2");
+
+        // Try to create a multi-day optional holiday leave
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-optional-holiday-multi-day")
+                .userId("user-optional-holiday-multi-day")
+                .dateRange(DateRange.builder()
+                        .startDate(startDate)
+                        .endDate(endDate) // Multi-day
+                        .build())
+                .type(LeaveType.OPTIONAL_HOLIDAY)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        HttpClientErrorException exception = assertThrows(HttpClientErrorException.class,
+                () -> restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class));
+
+        assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(exception.getResponseBodyAsString()).contains("Optional holidays must be single-day only");
+    }
+
+    @Test
+    void ingestAnnualLeaveShouldNotBeAffectedByOptionalHolidayValidation() {
+        // Do NOT create any optional holidays
+
+        // Create an annual leave - should be accepted regardless of optional holiday table
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-annual-leave-no-holiday")
+                .userId("user-annual-leave-no-holiday")
+                .dateRange(DateRange.builder()
+                        .startDate(FIXED_DATE.plusDays(1))
+                        .endDate(FIXED_DATE.plusDays(3))
+                        .build())
+                .type(LeaveType.ANNUAL_LEAVE) // Not OPTIONAL_HOLIDAY
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        var response = restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).contains("\"type\":\"ANNUAL_LEAVE\"");
     }
 }

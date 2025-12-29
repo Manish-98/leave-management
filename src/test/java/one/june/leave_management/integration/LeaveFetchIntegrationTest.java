@@ -241,6 +241,63 @@ class LeaveFetchIntegrationTest {
     }
 
     @Test
+    void fetchLeavesWithoutSortParameterShouldUseDefaultSorting() {
+        // When - No sort parameter provided
+        ResponseEntity<String> response = restTemplate.exchange(
+                baseUrl,
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+
+        // Extract the content array and verify sorting
+        // Default sort is startDate DESC (most recent first)
+        // The test data has leaves from 2024 and 2023
+        // Most recent first: 2024-10-05 (Q4), 2024-07-20 (Q3), 2024-04-15 (Q2), 2024-02-05 (Q1), 2024-01-10 (Q1), etc.
+        String body = response.getBody();
+
+        // Verify first result is from October 2024 (most recent)
+        assertThat(body).contains("\"startDate\":\"2024-10-05\"");
+
+        // Verify that 2024 leaves come before 2023 leaves in the response
+        int first2024Index = body.indexOf("\"startDate\":\"2024-");
+        int first2023Index = body.indexOf("\"startDate\":\"2023-");
+
+        // 2024 leaves should appear before 2023 leaves (descending order by year)
+        assertThat(first2024Index).isLessThan(first2023Index);
+    }
+
+    @Test
+    void fetchLeavesDefaultSortCanBeOverriddenWithPageable() {
+        // When - Override default sort with ascending order
+        ResponseEntity<String> response = restTemplate.exchange(
+                baseUrl + "?sort=startDate,asc",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+
+        // Verify ascending sort (oldest first)
+        // Should see 2023 dates before 2024 dates
+        String body = response.getBody();
+
+        // Find first occurrence of 2023 and 2024
+        int first2023Index = body.indexOf("\"startDate\":\"2023-");
+        int first2024Index = body.indexOf("\"startDate\":\"2024-");
+
+        // With ascending sort, 2023 should come before 2024
+        assertThat(first2023Index).isLessThan(first2024Index);
+    }
+
+    @Test
     void fetchLeavesWithNonExistentUserShouldReturnEmptyPage() {
         // When
         ResponseEntity<String> response = restTemplate.exchange(

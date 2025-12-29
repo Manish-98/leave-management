@@ -1,12 +1,15 @@
 package one.june.leave_management.domain.leave.service;
 
+import one.june.leave_management.common.exception.InvalidOptionalHolidayException;
 import one.june.leave_management.common.exception.OverlappingLeaveException;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.Leave;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
+import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
+import one.june.leave_management.domain.leave.port.OptionalHolidayRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,9 +18,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -29,6 +34,9 @@ class LeaveDomainServiceTest {
     @Mock
     private LeaveRepository leaveRepository;
 
+    @Mock
+    private OptionalHolidayRepository optionalHolidayRepository;
+
     private LeaveDomainService leaveDomainService;
 
     private static final String TEST_USER_ID = "test-user-123";
@@ -37,7 +45,7 @@ class LeaveDomainServiceTest {
 
     @BeforeEach
     void setUp() {
-        leaveDomainService = new LeaveDomainService(leaveRepository);
+        leaveDomainService = new LeaveDomainService(leaveRepository, optionalHolidayRepository);
     }
 
     // validateNoOverlappingLeaves tests
@@ -372,5 +380,129 @@ class LeaveDomainServiceTest {
         );
 
         assertEquals("Approved leaves must be at least 1 day long", exception.getMessage());
+    }
+
+    // validateOptionalHolidayDate tests
+
+    @Test
+    void shouldSkipValidationForAnnualLeave() {
+        LocalDate date = LocalDate.now().plusDays(10);
+        DateRange dateRange = DateRange.builder()
+                .startDate(date)
+                .endDate(date)
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        assertDoesNotThrow(() -> leaveDomainService.validateOptionalHolidayDate(leave));
+        verifyNoInteractions(optionalHolidayRepository);
+    }
+
+    @Test
+    void shouldAcceptValidSingleDayOptionalHoliday() {
+        LocalDate date = LocalDate.now().plusDays(10);
+        DateRange dateRange = DateRange.builder()
+                .startDate(date)
+                .endDate(date)
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.OPTIONAL_HOLIDAY)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        OptionalHoliday holiday = OptionalHoliday.builder()
+                .id(UUID.randomUUID())
+                .date(date)
+                .name("Test Holiday")
+                .build();
+
+        when(optionalHolidayRepository.findByDate(date)).thenReturn(Optional.of(holiday));
+
+        assertDoesNotThrow(() -> leaveDomainService.validateOptionalHolidayDate(leave));
+        verify(optionalHolidayRepository).findByDate(date);
+    }
+
+    @Test
+    void shouldRejectMultiDayOptionalHoliday() {
+        LocalDate startDate = LocalDate.now().plusDays(10);
+        LocalDate endDate = LocalDate.now().plusDays(11);
+        DateRange dateRange = DateRange.builder()
+                .startDate(startDate)
+                .endDate(endDate)
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.OPTIONAL_HOLIDAY)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        InvalidOptionalHolidayException exception = assertThrows(
+                InvalidOptionalHolidayException.class,
+                () -> leaveDomainService.validateOptionalHolidayDate(leave)
+        );
+
+        assertEquals(TEST_USER_ID, exception.getUserId());
+        assertEquals(startDate, exception.getRequestedDate());
+        assertEquals(TEST_LEAVE_ID_1, exception.getLeaveId());
+        assertTrue(exception.getMessage().contains("Optional holidays must be single-day only"));
+        verifyNoInteractions(optionalHolidayRepository);
+    }
+
+    @Test
+    void shouldRejectOptionalHolidayWhenDateNotFoundInDatabase() {
+        LocalDate date = LocalDate.now().plusDays(10);
+        DateRange dateRange = DateRange.builder()
+                .startDate(date)
+                .endDate(date)
+                .build();
+
+        Leave leave = Leave.builder()
+                .id(TEST_LEAVE_ID_1)
+                .userId(TEST_USER_ID)
+                .dateRange(dateRange)
+                .type(LeaveType.OPTIONAL_HOLIDAY)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        when(optionalHolidayRepository.findByDate(date)).thenReturn(Optional.empty());
+
+        InvalidOptionalHolidayException exception = assertThrows(
+                InvalidOptionalHolidayException.class,
+                () -> leaveDomainService.validateOptionalHolidayDate(leave)
+        );
+
+        assertEquals(TEST_USER_ID, exception.getUserId());
+        assertEquals(date, exception.getRequestedDate());
+        assertEquals(TEST_LEAVE_ID_1, exception.getLeaveId());
+        assertTrue(exception.getMessage().contains("is not a valid optional holiday"));
+        verify(optionalHolidayRepository).findByDate(date);
+    }
+
+    @Test
+    void shouldRejectNullLeaveForOptionalHolidayValidation() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> leaveDomainService.validateOptionalHolidayDate(null)
+        );
+
+        assertEquals("Leave cannot be null", exception.getMessage());
+        verifyNoInteractions(optionalHolidayRepository);
     }
 }

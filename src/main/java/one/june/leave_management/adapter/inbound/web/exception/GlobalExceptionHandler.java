@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.common.exception.DomainException;
 import one.june.leave_management.common.exception.ErrorResponse;
+import one.june.leave_management.common.exception.InvalidOptionalHolidayException;
 import one.june.leave_management.common.exception.OverlappingLeaveException;
 import one.june.leave_management.common.exception.SlackApiException;
 import one.june.leave_management.common.exception.SlackCommunicationException;
@@ -34,6 +35,25 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         logger.warn("Overlapping leave request for user {}: {}", ex.getUserId(), ex.getMessage());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(InvalidOptionalHolidayException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOptionalHolidayException(
+            InvalidOptionalHolidayException ex,
+            HttpServletRequest request
+    ) {
+        logger.warn("Invalid optional holiday request for user {} on date {}: {}",
+                ex.getUserId(), ex.getRequestedDate(), ex.getMessage());
 
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .status(HttpStatus.BAD_REQUEST.value())

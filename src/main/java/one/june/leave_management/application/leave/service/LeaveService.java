@@ -20,7 +20,9 @@ import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJo
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,6 +88,7 @@ public class LeaveService {
 
         leaveDomainService.validateLeaveForPersistence(leave);
         leaveDomainService.validateNoOverlappingLeaves(leave);
+        leaveDomainService.validateOptionalHolidayDate(leave);
         Leave savedLeave = leaveRepository.save(leave);
         performOutboundSync(savedLeave, command.getSourceType());
 
@@ -113,8 +116,11 @@ public class LeaveService {
         // Convert query to domain filters
         LeaveFilters filters = convertToFilters(query);
 
+        // Apply default sort if not specified
+        Pageable sortedPageable = applyDefaultSort(pageable);
+
         // Fetch leaves from repository
-        Page<Leave> leavesPage = leaveRepository.findByFilters(filters, pageable);
+        Page<Leave> leavesPage = leaveRepository.findByFilters(filters, sortedPageable);
 
         // Convert to DTOs
         Page<LeaveDto> dtoPage = leavesPage.map(leaveMapper::toDto);
@@ -125,6 +131,25 @@ public class LeaveService {
                     dtoPage.getTotalPages());
 
         return dtoPage;
+    }
+
+    /**
+     * Apply default sort if no sort is specified in the Pageable.
+     * Default sort: startDate DESC (most recent first)
+     *
+     * @param pageable the original pageable
+     * @return pageable with default sort if unsorted, otherwise original pageable
+     */
+    private Pageable applyDefaultSort(Pageable pageable) {
+        if (pageable.getSort().isUnsorted()) {
+            logger.debug("Applying default sort: startDate DESC");
+            return PageRequest.of(
+                    pageable.getPageNumber(),
+                    pageable.getPageSize(),
+                    Sort.by(Sort.Direction.DESC, "startDate")
+            );
+        }
+        return pageable;
     }
 
     /**

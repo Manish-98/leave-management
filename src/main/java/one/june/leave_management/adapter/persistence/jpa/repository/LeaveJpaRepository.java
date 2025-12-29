@@ -44,6 +44,8 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
      * Find leaves by filters with pagination support.
      * All filters are optional - null values will be ignored.
      * Uses date range comparisons for year filtering to ensure compatibility with H2 database.
+     * Default sorting is applied at the service layer (startDate DESC).
+     * Clients can override the default sort order using Pageable sort parameters.
      *
      * @param userId optional user ID to filter by
      * @param year optional year to filter by (leaves overlapping with the year)
