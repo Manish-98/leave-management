@@ -28,6 +28,10 @@ public class BulkUploadJob {
     private UUID id;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false)
+    private BulkUploadType type;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private BulkUploadStatus status;
 

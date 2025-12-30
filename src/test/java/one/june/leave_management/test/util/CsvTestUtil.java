@@ -231,4 +231,170 @@ public class CsvTestUtil {
             }
         }
     }
+
+    // ========== Employee CSV Utilities ==========
+
+    /**
+     * Creates a valid CSV file for employee bulk upload with all required columns.
+     */
+    public static MultipartFile createValidEmployeeCsvFile(String filename, List<CsvEmployeeRecord> records) {
+        String csvContent = createEmployeeCsvContent(records);
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates CSV content string from a list of employee records.
+     */
+    public static String createEmployeeCsvContent(List<CsvEmployeeRecord> records) {
+        StringBuilder csv = new StringBuilder("name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\n");
+        for (CsvEmployeeRecord record : records) {
+            csv.append(String.format("%s,%s,%s,%s,%s,%s,%s\n",
+                    record.name(),
+                    record.slackId() != null ? record.slackId() : "",
+                    record.googleId() != null ? record.googleId() : "",
+                    record.slackDisplayName() != null ? record.slackDisplayName() : "",
+                    record.dateOfJoining(),
+                    record.active() != null ? record.active() : "true",
+                    record.carryForwardLeaves() != null ? record.carryForwardLeaves() : "0"));
+        }
+        return csv.toString();
+    }
+
+    /**
+     * Creates a CSV file with missing required headers for employee upload.
+     */
+    public static MultipartFile createEmployeeCsvWithMissingHeaders(String filename) {
+        String csvContent = "name,slackId\nJohn Doe,U12345\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with invalid date format for employee upload.
+     */
+    public static MultipartFile createEmployeeCsvWithInvalidDateFormat(String filename) {
+        String csvContent = "name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\nJohn Doe,U12345,,john.doe,01-15-2020,true,5\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with no external IDs (neither slackId nor googleId).
+     */
+    public static MultipartFile createEmployeeCsvWithNoExternalId(String filename) {
+        String csvContent = "name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\nJohn Doe,,,john.doe,2020-01-15,true,5\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with invalid boolean value for active field.
+     */
+    public static MultipartFile createEmployeeCsvWithInvalidBoolean(String filename) {
+        String csvContent = "name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\nJohn Doe,U12345,,john.doe,2020-01-15,invalid,5\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with negative carry forward leaves.
+     */
+    public static MultipartFile createEmployeeCsvWithNegativeCarryForward(String filename) {
+        String csvContent = "name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\nJohn Doe,U12345,,john.doe,2020-01-15,true,-5\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with empty required fields for employee upload.
+     */
+    public static MultipartFile createEmployeeCsvWithEmptyFields(String filename) {
+        String csvContent = "name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\n,U12345,,john.doe,2020-01-15,true,5\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with case-insensitive headers for employee upload.
+     */
+    public static MultipartFile createEmployeeCsvWithMixedCaseHeaders(String filename) {
+        String csvContent = "Name,SlackId,GoogleId,SlackDisplayName,DateOfJoining,Active,CarryForwardLeaves\nJohn Doe,U12345,,john.doe,2020-01-15,true,5\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with whitespace in fields for employee upload.
+     */
+    public static MultipartFile createEmployeeCsvWithWhitespace(String filename) {
+        String csvContent = "name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\n John Doe , U12345 , , john.doe , 2020-01-15 , true , 5 \n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Creates a CSV file with only headers (no data rows) for employee upload.
+     */
+    public static MultipartFile createEmployeeCsvWithHeadersOnly(String filename) {
+        String csvContent = "name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves\n";
+        return createMultipartFile(filename, csvContent);
+    }
+
+    /**
+     * Record class for CSV employee data.
+     */
+    public record CsvEmployeeRecord(
+            String name,
+            String slackId,
+            String googleId,
+            String slackDisplayName,
+            String dateOfJoining,
+            String active,
+            String carryForwardLeaves
+    ) {
+        public static CsvEmployeeRecordBuilder builder() {
+            return new CsvEmployeeRecordBuilder();
+        }
+
+        public static class CsvEmployeeRecordBuilder {
+            private String name = "John Doe";
+            private String slackId = "U12345";
+            private String googleId = null;
+            private String slackDisplayName = "john.doe";
+            private String dateOfJoining = "2020-01-15";
+            private String active = "true";
+            private String carryForwardLeaves = "0";
+
+            public CsvEmployeeRecordBuilder name(String name) {
+                this.name = name;
+                return this;
+            }
+
+            public CsvEmployeeRecordBuilder slackId(String slackId) {
+                this.slackId = slackId;
+                return this;
+            }
+
+            public CsvEmployeeRecordBuilder googleId(String googleId) {
+                this.googleId = googleId;
+                return this;
+            }
+
+            public CsvEmployeeRecordBuilder slackDisplayName(String slackDisplayName) {
+                this.slackDisplayName = slackDisplayName;
+                return this;
+            }
+
+            public CsvEmployeeRecordBuilder dateOfJoining(String dateOfJoining) {
+                this.dateOfJoining = dateOfJoining;
+                return this;
+            }
+
+            public CsvEmployeeRecordBuilder active(String active) {
+                this.active = active;
+                return this;
+            }
+
+            public CsvEmployeeRecordBuilder carryForwardLeaves(String carryForwardLeaves) {
+                this.carryForwardLeaves = carryForwardLeaves;
+                return this;
+            }
+
+            public CsvEmployeeRecord build() {
+                return new CsvEmployeeRecord(name, slackId, googleId, slackDisplayName, dateOfJoining, active, carryForwardLeaves);
+            }
+        }
+    }
 }

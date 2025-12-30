@@ -3,6 +3,8 @@ package one.june.leave_management.adapter.inbound.web.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.common.exception.DomainException;
+import one.june.leave_management.common.exception.DuplicateExternalIdException;
+import one.june.leave_management.common.exception.EmployeeNotFoundException;
 import one.june.leave_management.common.exception.ErrorResponse;
 import one.june.leave_management.common.exception.InvalidOptionalHolidayException;
 import one.june.leave_management.common.exception.OverlappingLeaveException;
@@ -168,6 +170,44 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    // ========== Employee Exception Handlers ==========
+
+    @ExceptionHandler(EmployeeNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleEmployeeNotFoundException(
+            EmployeeNotFoundException ex,
+            HttpServletRequest request
+    ) {
+        logger.warn("Employee not found: {}", ex.getMessage());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.NOT_FOUND.value())
+                .error("Not Found")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    }
+
+    @ExceptionHandler(DuplicateExternalIdException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateExternalIdException(
+            DuplicateExternalIdException ex,
+            HttpServletRequest request
+    ) {
+        logger.warn("Duplicate external ID: {}", ex.getMessage());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.CONFLICT.value())
+                .error("Conflict")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
     }
 
     // ========== Slack Exception Handlers ==========

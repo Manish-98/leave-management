@@ -1,0 +1,11 @@
+name,slackId,googleId,slackDisplayName,dateOfJoining,active,carryForwardLeaves
+John Doe,U12345,,john.doe,2020-01-15,true,5
+Jane Smith,,jane.smith@example.com,jane.smith,2021-03-20,true,3
+Bob Johnson,U98765,bob.johnson@example.com,bob.j,2019-06-10,true,0
+Alice Williams,U11111,,alice.w,2022-07-01,true,2
+Charlie Brown,U22222,charlie.b@example.com,charlie,2020-09-15,true,4
+Diana Prince,U33333,,diana.p,2021-11-30,false,0
+Evan Wright,U44444,evan.w@example.com,evan,2023-01-10,true,1
+Frank Miller,U55555,,frank.m,2019-02-28,true,6
+Grace Lee,U66666,grace.lee@example.com,grace.l,2020-05-12,true,3
+Henry Davis,U77777,,henry.d,2022-08-20,true,0

@@ -2,6 +2,8 @@ package one.june.leave_management.application.leave.service;
 
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
+import one.june.leave_management.application.bulk.strategy.LeaveBulkUploadStrategy;
+import one.june.leave_management.application.bulk.service.CsvResultService;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.domain.leave.model.*;
@@ -21,7 +23,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -62,6 +66,9 @@ class LeaveServiceTest {
     @Mock
     private LeaveMapper leaveMapper;
 
+    @Mock
+    private LeaveBulkUploadStrategy leaveBulkUploadStrategy;
+
     private LeaveService leaveService;
 
     @BeforeEach
@@ -75,7 +82,8 @@ class LeaveServiceTest {
                 leaveMapper,
                 bulkUploadRecordRepository,
                 bulkUploadJobRepository,
-                csvResultService
+                csvResultService,
+                leaveBulkUploadStrategy
         );
     }
 
@@ -111,6 +119,16 @@ class LeaveServiceTest {
                 dto.setId(leave.getId());
                 return dto;
             });
+            when(leaveBulkUploadStrategy.populateMetadataFromCommand(any(), any(), any(), any(), any()))
+                    .thenAnswer(invocation -> {
+                        Map<String, String> metadata = new HashMap<>();
+                        metadata.put("userid", invocation.getArgument(0));
+                        metadata.put("startdate", invocation.getArgument(1));
+                        metadata.put("enddate", invocation.getArgument(2));
+                        metadata.put("type", invocation.getArgument(3));
+                        metadata.put("durationtype", invocation.getArgument(4));
+                        return metadata;
+                    });
             when(bulkUploadRecordRepository.save(any(BulkUploadRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(bulkUploadJobRepository.save(job)).thenReturn(job);
@@ -152,6 +170,16 @@ class LeaveServiceTest {
                 dto.setId(leave.getId());
                 return dto;
             });
+            when(leaveBulkUploadStrategy.populateMetadataFromCommand(any(), any(), any(), any(), any()))
+                    .thenAnswer(invocation -> {
+                        Map<String, String> metadata = new HashMap<>();
+                        metadata.put("userid", invocation.getArgument(0));
+                        metadata.put("startdate", invocation.getArgument(1));
+                        metadata.put("enddate", invocation.getArgument(2));
+                        metadata.put("type", invocation.getArgument(3));
+                        metadata.put("durationtype", invocation.getArgument(4));
+                        return metadata;
+                    });
             when(bulkUploadRecordRepository.save(any(BulkUploadRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(bulkUploadJobRepository.save(job)).thenReturn(job);
@@ -167,8 +195,8 @@ class LeaveServiceTest {
             BulkUploadRecord savedRecord = recordCaptor.getValue();
             assertThat(savedRecord).isNotNull();
             assertThat(savedRecord.getStatus()).isEqualTo(BulkUploadRecord.BulkRecordStatus.SUCCESS);
-            assertThat(savedRecord.getUserId()).isEqualTo("user1");
-            assertThat(savedRecord.getLeaveId()).isNotNull();
+            assertThat(savedRecord.getMetadata()).isNotNull();
+            assertThat(savedRecord.getMetadata().get("userid")).isEqualTo("user1");
             assertThat(savedRecord.getRowNumber()).isEqualTo(1);
         }
 
@@ -181,6 +209,16 @@ class LeaveServiceTest {
             LeaveIngestionCommand command = createValidCommand("user1");
 
             when(bulkUploadJobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(leaveBulkUploadStrategy.populateMetadataFromCommand(any(), any(), any(), any(), any()))
+                    .thenAnswer(invocation -> {
+                        Map<String, String> metadata = new HashMap<>();
+                        metadata.put("userid", invocation.getArgument(0));
+                        metadata.put("startdate", invocation.getArgument(1));
+                        metadata.put("enddate", invocation.getArgument(2));
+                        metadata.put("type", invocation.getArgument(3));
+                        metadata.put("durationtype", invocation.getArgument(4));
+                        return metadata;
+                    });
             when(bulkUploadRecordRepository.save(any(BulkUploadRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(bulkUploadJobRepository.save(job)).thenReturn(job);
@@ -198,7 +236,8 @@ class LeaveServiceTest {
             BulkUploadRecord savedRecord = recordCaptor.getValue();
             assertThat(savedRecord).isNotNull();
             assertThat(savedRecord.getStatus()).isEqualTo(BulkUploadRecord.BulkRecordStatus.ERROR);
-            assertThat(savedRecord.getUserId()).isEqualTo("user1");
+            assertThat(savedRecord.getMetadata()).isNotNull();
+            assertThat(savedRecord.getMetadata().get("userid")).isEqualTo("user1");
             assertThat(savedRecord.getErrorMessage()).isEqualTo("Invalid date range");
         }
 
@@ -509,7 +548,7 @@ class LeaveServiceTest {
             Leave leave = createLeave(UUID.randomUUID());
 
             // When
-            leaveService.performOutboundSync(leave, SourceType.CSV_BULK);
+            leaveService.performOutboundSync(leave, SourceType.BULK_UPLOAD);
 
             // Then
             verify(outboundSyncService, never()).sync(any(), any());
@@ -561,7 +600,7 @@ class LeaveServiceTest {
     private LeaveIngestionCommand createValidCommand(String userId) {
         return LeaveIngestionCommand.builder()
                 .userId(userId)
-                .sourceType(SourceType.CSV_BULK)
+                .sourceType(SourceType.BULK_UPLOAD)
                 .sourceId("csv-row-" + UUID.randomUUID())
                 .dateRange(DateRange.builder()
                         .startDate(LocalDate.now())

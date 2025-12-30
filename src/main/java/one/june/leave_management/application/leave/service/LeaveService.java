@@ -17,6 +17,8 @@ import one.june.leave_management.domain.leave.port.LeaveSourceRefRepository;
 import one.june.leave_management.domain.leave.service.LeaveDomainService;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadRecordRepository;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJobRepository;
+import one.june.leave_management.application.bulk.strategy.LeaveBulkUploadStrategy;
+import one.june.leave_management.application.bulk.service.CsvResultService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -27,8 +29,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Unified service for leave operations.
@@ -38,6 +42,7 @@ import java.util.Optional;
 public class LeaveService {
 
     private static final Logger logger = LoggerFactory.getLogger(LeaveService.class);
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final LeaveRepository leaveRepository;
     private final LeaveSourceRefRepository leaveSourceRefRepository;
@@ -47,6 +52,7 @@ public class LeaveService {
     private final BulkUploadRecordRepository bulkUploadRecordRepository;
     private final BulkUploadJobRepository bulkUploadJobRepository;
     private final CsvResultService csvResultService;
+    private final LeaveBulkUploadStrategy leaveBulkUploadStrategy;
 
     public LeaveService(LeaveRepository leaveRepository,
                         LeaveSourceRefRepository leaveSourceRefRepository,
@@ -55,7 +61,8 @@ public class LeaveService {
                         LeaveMapper leaveMapper,
                         BulkUploadRecordRepository bulkUploadRecordRepository,
                         BulkUploadJobRepository bulkUploadJobRepository,
-                        CsvResultService csvResultService) {
+                        CsvResultService csvResultService,
+                        LeaveBulkUploadStrategy leaveBulkUploadStrategy) {
         this.leaveRepository = leaveRepository;
         this.leaveSourceRefRepository = leaveSourceRefRepository;
         this.outboundSyncService = outboundSyncService;
@@ -64,6 +71,7 @@ public class LeaveService {
         this.bulkUploadRecordRepository = bulkUploadRecordRepository;
         this.bulkUploadJobRepository = bulkUploadJobRepository;
         this.csvResultService = csvResultService;
+        this.leaveBulkUploadStrategy = leaveBulkUploadStrategy;
     }
 
     /**
@@ -217,9 +225,9 @@ public class LeaveService {
 
     // Package-private for testing
     void performOutboundSync(Leave leave, SourceType sourceType) {
-        // Skip outbound sync for bulk CSV uploads
-        if (sourceType == SourceType.CSV_BULK) {
-            logger.info("Skipping outbound sync for CSV bulk upload leave {}", leave.getId());
+        // Skip outbound sync for bulk uploads
+        if (sourceType == SourceType.BULK_UPLOAD) {
+            logger.info("Skipping outbound sync for bulk upload leave {}", leave.getId());
             return;
         }
 
@@ -253,83 +261,6 @@ public class LeaveService {
             // This is a data inconsistency - source reference points to non-existent leave
             logger.error("Source reference {} points to non-existent leave ID: {}", sourceRef, sourceRef.getLeaveId());
             throw new IllegalStateException("Source reference points to non-existent leave: " + sourceRef.getLeaveId());
-        }
-    }
-
-    /**
-     * Bulk ingest leaves from CSV upload asynchronously
-     * Processes each leave individually, continuing on errors
-     *
-     * @param job the bulk upload job entity
-     * @param commands list of leave ingestion commands from CSV
-     */
-    @Async("taskExecutor")
-    @Transactional
-    public void bulkIngestAsync(BulkUploadJob job, List<LeaveIngestionCommand> commands) {
-        logger.info("Starting bulk ingest for job {} with {} commands", job.getId(), commands.size());
-
-        // Re-fetch the job to ensure it's managed in this transaction context
-        // This prevents HHH000437 errors when the job is used to create BulkUploadRecord entities
-        BulkUploadJob managedJob = bulkUploadJobRepository.findById(job.getId())
-                .orElseThrow(() -> new BulkUploadJobNotFoundException(job.getId()));
-
-        int rowNumber = 0;
-
-        for (LeaveIngestionCommand command : commands) {
-            rowNumber++;
-
-            try {
-                // Ingest the leave
-                LeaveDto result = ingest(command);
-
-                // Create success record using managed job instance
-                BulkUploadRecord record = BulkUploadRecord.createSuccess(
-                        managedJob,
-                        rowNumber,
-                        command.getUserId(),
-                        result.getId()
-                );
-                bulkUploadRecordRepository.save(record);
-
-                // Update job counters on managed instance
-                managedJob.incrementSuccess();
-
-                logger.debug("Successfully ingested row {} for job {}", rowNumber, managedJob.getId());
-
-            } catch (Exception e) {
-                // Create failure record using managed job instance
-                BulkUploadRecord record = BulkUploadRecord.createFailure(
-                        managedJob,
-                        rowNumber,
-                        command.getUserId(),
-                        e.getMessage()
-                );
-                bulkUploadRecordRepository.save(record);
-
-                // Update job counters on managed instance
-                managedJob.incrementFailure();
-
-                logger.warn("Failed to ingest row {} for job {}: {}", rowNumber, managedJob.getId(), e.getMessage());
-                // Continue processing next record
-            }
-        }
-
-        // Mark job as completed and save managed instance
-        managedJob.markAsCompleted();
-        bulkUploadJobRepository.save(managedJob);
-
-        logger.info("Completed bulk ingest for job {}: {} success, {} failed",
-                managedJob.getId(), managedJob.getSuccessfulRecords(), managedJob.getFailedRecords());
-
-        // Generate CSV result file using managed job instance
-        try {
-            String resultFilePath = csvResultService.generateResultFile(managedJob);
-            managedJob.setResultFilePath(resultFilePath);
-            bulkUploadJobRepository.save(managedJob);
-            logger.info("Successfully generated result CSV for job {} at {}", managedJob.getId(), resultFilePath);
-        } catch (Exception e) {
-            logger.error("Failed to generate result CSV for job {}", managedJob.getId(), e);
-            // Don't fail the job - the ingest was successful, only result generation failed
         }
     }
 }

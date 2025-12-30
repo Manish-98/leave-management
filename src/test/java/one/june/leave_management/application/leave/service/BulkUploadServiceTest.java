@@ -1,11 +1,11 @@
 package one.june.leave_management.application.leave.service;
 
-import one.june.leave_management.adapter.inbound.web.csv.CsvLeaveParser;
+import one.june.leave_management.adapter.inbound.web.csv.CsvLeaveParserStrategy;
+import one.june.leave_management.adapter.inbound.web.csv.ParsedResult;
 import one.june.leave_management.adapter.inbound.web.dto.BulkUploadResponse;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.domain.leave.model.BulkUploadJob;
-import one.june.leave_management.domain.leave.model.BulkUploadRecord;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
@@ -13,6 +13,7 @@ import one.june.leave_management.domain.leave.model.SourceType;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJobRepository;
 import one.june.leave_management.test.util.CsvTestUtil;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,13 +21,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,20 +42,19 @@ import static org.mockito.Mockito.*;
 class BulkUploadServiceTest {
 
     @Mock
-    private CsvLeaveParser csvLeaveParser;
-
-    @Mock
-    private LeaveService leaveService;
+    private CsvLeaveParserStrategy csvLeaveParserStrategy;
 
     @Mock
     private BulkUploadJobRepository bulkUploadJobRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private BulkUploadService bulkUploadService;
 
     @BeforeEach
     void setUp() {
-        // Pass null for self parameter in unit tests
-        bulkUploadService = new BulkUploadService(csvLeaveParser, leaveService, bulkUploadJobRepository, null);
+        bulkUploadService = new BulkUploadService(csvLeaveParserStrategy, bulkUploadJobRepository, eventPublisher);
     }
 
     @Test
@@ -73,7 +74,7 @@ class BulkUploadServiceTest {
         List<LeaveIngestionCommand> commands = List.of(
                 LeaveIngestionCommand.builder()
                         .userId("user1")
-                        .sourceType(SourceType.CSV_BULK)
+                        .sourceType(SourceType.BULK_UPLOAD)
                         .sourceId("csv-bulk-123-1")
                         .type(LeaveType.ANNUAL_LEAVE)
                         .status(LeaveStatus.APPROVED)
@@ -81,7 +82,12 @@ class BulkUploadServiceTest {
                         .build()
         );
 
-        when(csvLeaveParser.parse(eq(file), any(String.class))).thenReturn(commands);
+        // Create ParsedResult objects
+        List<ParsedResult<LeaveIngestionCommand>> parsedResults = List.of(
+                ParsedResult.success(commands.get(0), Map.of("userid", "user1", "startdate", "2024-01-01", "enddate", "2024-01-05", "type", "ANNUAL_LEAVE"), 1)
+        );
+
+        when(csvLeaveParserStrategy.parse(eq(file), any(String.class))).thenReturn(parsedResults);
         when(bulkUploadJobRepository.save(any(BulkUploadJob.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
@@ -96,7 +102,7 @@ class BulkUploadServiceTest {
         assertThat(response.getResultAvailable()).isFalse();
 
         // Verify parser called
-        verify(csvLeaveParser).parse(eq(file), any(String.class));
+        verify(csvLeaveParserStrategy).parse(eq(file), any(String.class));
 
         // Verify job saved
         ArgumentCaptor<BulkUploadJob> jobCaptor = ArgumentCaptor.forClass(BulkUploadJob.class);
@@ -119,7 +125,7 @@ class BulkUploadServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("File is empty");
 
-        verify(csvLeaveParser, never()).parse(any(), any());
+        verify(csvLeaveParserStrategy, never()).parse(any(), any());
         verify(bulkUploadJobRepository, never()).save(any());
     }
 
@@ -134,7 +140,7 @@ class BulkUploadServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Only CSV files are allowed");
 
-        verify(csvLeaveParser, never()).parse(any(), any());
+        verify(csvLeaveParserStrategy, never()).parse(any(), any());
         verify(bulkUploadJobRepository, never()).save(any());
     }
 
@@ -149,7 +155,7 @@ class BulkUploadServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("File size exceeds maximum limit of 10MB");
 
-        verify(csvLeaveParser, never()).parse(any(), any());
+        verify(csvLeaveParserStrategy, never()).parse(any(), any());
         verify(bulkUploadJobRepository, never()).save(any());
     }
 
@@ -164,7 +170,7 @@ class BulkUploadServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("File is empty");
 
-        verify(csvLeaveParser, never()).parse(any(), any());
+        verify(csvLeaveParserStrategy, never()).parse(any(), any());
         verify(bulkUploadJobRepository, never()).save(any());
     }
 
@@ -257,42 +263,6 @@ class BulkUploadServiceTest {
     }
 
     @Test
-    @DisplayName("Should trigger async processing when job created")
-    void shouldTriggerAsyncProcessing() throws IOException {
-        // Given
-        List<CsvTestUtil.CsvLeaveRecord> records = List.of(
-                CsvTestUtil.CsvLeaveRecord.builder()
-                        .userId("user1")
-                        .startDate("2024-01-01")
-                        .endDate("2024-01-01")
-                        .type("ANNUAL_LEAVE")
-                        .build()
-        );
-        MultipartFile file = CsvTestUtil.createValidCsvFile("test", records);
-
-        List<LeaveIngestionCommand> commands = List.of(
-                LeaveIngestionCommand.builder()
-                        .userId("user1")
-                        .sourceType(SourceType.CSV_BULK)
-                        .build()
-        );
-
-        when(csvLeaveParser.parse(eq(file), any(String.class))).thenReturn(commands);
-        when(bulkUploadJobRepository.save(any(BulkUploadJob.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        doNothing().when(leaveService).bulkIngestAsync(any(), eq(commands));
-
-        // When
-        bulkUploadService.initiateBulkUpload(file);
-
-        // Then - Verify async processing was triggered
-        // Use Awaitility to wait for async processing
-        await().atMost(java.time.Duration.ofSeconds(2))
-                .untilAsserted(() -> {
-                    verify(leaveService, atLeastOnce()).bulkIngestAsync(any(BulkUploadJob.class), eq(commands));
-                });
-    }
-
-    @Test
     @DisplayName("Should handle exception during CSV parsing")
     void shouldHandleExceptionDuringParsing() throws IOException {
         // Given
@@ -306,7 +276,7 @@ class BulkUploadServiceTest {
         );
         MultipartFile file = CsvTestUtil.createValidCsvFile("test.csv", records);
 
-        when(csvLeaveParser.parse(eq(file), any(String.class)))
+        when(csvLeaveParserStrategy.parse(eq(file), any(String.class)))
                 .thenThrow(new RuntimeException("Parse error"));
 
         // When & Then
@@ -315,49 +285,7 @@ class BulkUploadServiceTest {
                 .hasMessageContaining("Failed to parse CSV file");
 
         verify(bulkUploadJobRepository, never()).save(any());
-        verify(leaveService, never()).bulkIngestAsync(any(), any());
-    }
-
-    @Test
-    @DisplayName("Should handle exception during async processing")
-    void shouldHandleExceptionDuringAsyncProcessing() throws IOException {
-        // Given
-        List<CsvTestUtil.CsvLeaveRecord> records = List.of(
-                CsvTestUtil.CsvLeaveRecord.builder()
-                        .userId("user1")
-                        .startDate("2024-01-01")
-                        .endDate("2024-01-01")
-                        .type("ANNUAL_LEAVE")
-                        .build()
-        );
-        MultipartFile file = CsvTestUtil.createValidCsvFile("test", records);
-
-        List<LeaveIngestionCommand> commands = List.of(
-                LeaveIngestionCommand.builder()
-                        .userId("user1")
-                        .sourceType(SourceType.CSV_BULK)
-                        .build()
-        );
-
-        when(csvLeaveParser.parse(eq(file), any(String.class))).thenReturn(commands);
-        when(bulkUploadJobRepository.save(any(BulkUploadJob.class))).thenAnswer(invocation -> {
-            BulkUploadJob job = invocation.getArgument(0);
-            return job;
-        });
-
-        doThrow(new RuntimeException("Processing error"))
-                .when(leaveService).bulkIngestAsync(any(BulkUploadJob.class), eq(commands));
-
-        // When
-        BulkUploadResponse response = bulkUploadService.initiateBulkUpload(file);
-
-        // Then - Verify response contains job ID (status might already be FAILED due to synchronous execution)
-        assertThat(response.getJobId()).isNotNull();
-
-        // Wait for async processing to complete and verify job was marked as FAILED
-        await().atMost(java.time.Duration.ofSeconds(2))
-                .untilAsserted(() -> {
-                    verify(bulkUploadJobRepository, atLeast(2)).save(any(BulkUploadJob.class));
-                });
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }
+

@@ -1,15 +1,18 @@
-package one.june.leave_management.application.leave.service;
+package one.june.leave_management.application.bulk.service;
 
 import one.june.leave_management.adapter.inbound.web.config.FileStorageConfig;
+import one.june.leave_management.application.bulk.strategy.BulkUploadStrategy;
+import one.june.leave_management.application.bulk.strategy.BulkUploadStrategyRegistry;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.BulkUploadJob;
 import one.june.leave_management.domain.leave.model.BulkUploadRecord;
+import one.june.leave_management.domain.leave.model.BulkUploadType;
 import one.june.leave_management.domain.leave.model.Leave;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
+import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJobRepository;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadRecordRepository;
-import one.june.leave_management.domain.leave.port.LeaveRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +23,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,18 +41,48 @@ class CsvResultServiceTest {
 
     private FileStorageConfig fileStorageConfig;
     private BulkUploadRecordRepository bulkUploadRecordRepository;
-    private LeaveRepository leaveRepository;
+    private BulkUploadJobRepository bulkUploadJobRepository;
+    private BulkUploadStrategyRegistry strategyRegistry;
     private CsvResultService csvResultService;
+
+    private BulkUploadStrategy leaveStrategy;
 
     @BeforeEach
     void setUp() {
         fileStorageConfig = mock(FileStorageConfig.class);
         bulkUploadRecordRepository = mock(BulkUploadRecordRepository.class);
-        leaveRepository = mock(LeaveRepository.class);
+        bulkUploadJobRepository = mock(BulkUploadJobRepository.class);
+        strategyRegistry = mock(BulkUploadStrategyRegistry.class);
 
         when(fileStorageConfig.getBulkUploadResultPath()).thenReturn(tempDir);
 
-        csvResultService = new CsvResultService(fileStorageConfig, bulkUploadRecordRepository, leaveRepository);
+        // Mock the strategy for LEAVE type
+        leaveStrategy = mock(BulkUploadStrategy.class);
+        when(leaveStrategy.getResultHeaders()).thenReturn(new String[]{"userId", "startDate", "endDate", "type", "durationType", "status"});
+        when(strategyRegistry.getStrategy(BulkUploadType.LEAVE)).thenReturn(leaveStrategy);
+
+        // Mock generateResultRow to return a CSV row based on metadata
+        when(leaveStrategy.generateResultRow(any())).thenAnswer(invocation -> {
+            BulkUploadRecord record = invocation.getArgument(0);
+            Map<String, String> metadata = record.getMetadata();
+            String status = record.getStatus().toString();
+            String errorMessage = record.getErrorMessage();
+
+            StringBuilder row = new StringBuilder();
+            row.append(metadata.getOrDefault("userid", ""));
+            row.append(",").append(metadata.getOrDefault("startdate", ""));
+            row.append(",").append(metadata.getOrDefault("enddate", ""));
+            row.append(",").append(metadata.getOrDefault("type", ""));
+            row.append(",").append(metadata.getOrDefault("durationtype", ""));
+            row.append(",").append(status);
+            if (errorMessage != null && !errorMessage.isEmpty()) {
+                row.append(",").append(errorMessage);
+            }
+            return row.toString();
+        });
+
+        csvResultService = new CsvResultService(fileStorageConfig, bulkUploadRecordRepository,
+                bulkUploadJobRepository, strategyRegistry);
     }
 
     @Test
@@ -55,10 +90,10 @@ class CsvResultServiceTest {
     void shouldGenerateResultFileWithSuccessfulRecords() throws IOException {
         // Given
         UUID jobId = UUID.randomUUID();
-        UUID leaveId = UUID.randomUUID();
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .status(BulkUploadJob.BulkUploadStatus.COMPLETED)
                 .totalRecords(2)
@@ -70,25 +105,12 @@ class CsvResultServiceTest {
                 .id(1L)
                 .job(job)
                 .rowNumber(2)
-                .userId("user1")
+                .metadata(createTestMetadata("user1"))
                 .status(BulkUploadRecord.BulkRecordStatus.SUCCESS)
-                .leaveId(leaveId)
                 .build();
 
-        Leave leave1 = Leave.builder()
-                .id(leaveId)
-                .userId("user1")
-                .dateRange(DateRange.builder()
-                        .startDate(LocalDate.of(2024, 1, 1))
-                        .endDate(LocalDate.of(2024, 1, 5))
-                        .build())
-                .type(LeaveType.ANNUAL_LEAVE)
-                .durationType(LeaveDurationType.FULL_DAY)
-                .status(LeaveStatus.APPROVED)
-                .build();
 
         when(bulkUploadRecordRepository.findByJobId(jobId)).thenReturn(new ArrayList<>(List.of(record1)));
-        when(leaveRepository.findById(leaveId)).thenReturn(java.util.Optional.of(leave1));
 
         // When
         String resultPath = csvResultService.generateResultFile(job);
@@ -117,6 +139,7 @@ class CsvResultServiceTest {
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .status(BulkUploadJob.BulkUploadStatus.FAILED)
                 .totalRecords(1)
@@ -128,7 +151,7 @@ class CsvResultServiceTest {
                 .id(1L)
                 .job(job)
                 .rowNumber(2)
-                .userId("user1")
+                .metadata(createTestMetadata("user1"))
                 .status(BulkUploadRecord.BulkRecordStatus.ERROR)
                 .errorMessage("Invalid date format")
                 .build();
@@ -155,10 +178,10 @@ class CsvResultServiceTest {
     void shouldGenerateResultFileWithMixedRecords() throws IOException {
         // Given
         UUID jobId = UUID.randomUUID();
-        UUID leaveId = UUID.randomUUID();
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .status(BulkUploadJob.BulkUploadStatus.COMPLETED)
                 .totalRecords(3)
@@ -170,34 +193,21 @@ class CsvResultServiceTest {
                 .id(1L)
                 .job(job)
                 .rowNumber(2)
-                .userId("user1")
+                .metadata(createTestMetadata("user1"))
                 .status(BulkUploadRecord.BulkRecordStatus.SUCCESS)
-                .leaveId(leaveId)
                 .build();
 
         BulkUploadRecord record2 = BulkUploadRecord.builder()
                 .id(2L)
                 .job(job)
                 .rowNumber(3)
-                .userId("user2")
+                .metadata(createTestMetadata("user2"))
                 .status(BulkUploadRecord.BulkRecordStatus.ERROR)
                 .errorMessage("Invalid leave type")
                 .build();
 
-        Leave leave1 = Leave.builder()
-                .id(leaveId)
-                .userId("user1")
-                .dateRange(DateRange.builder()
-                        .startDate(LocalDate.of(2024, 1, 1))
-                        .endDate(LocalDate.of(2024, 1, 5))
-                        .build())
-                .type(LeaveType.ANNUAL_LEAVE)
-                .durationType(LeaveDurationType.FULL_DAY)
-                .status(LeaveStatus.APPROVED)
-                .build();
 
         when(bulkUploadRecordRepository.findByJobId(jobId)).thenReturn(new ArrayList<>(List.of(record1, record2)));
-        when(leaveRepository.findById(leaveId)).thenReturn(java.util.Optional.of(leave1));
 
         // When
         String resultPath = csvResultService.generateResultFile(job);
@@ -223,6 +233,7 @@ class CsvResultServiceTest {
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .status(BulkUploadJob.BulkUploadStatus.COMPLETED)
                 .totalRecords(0)
@@ -255,6 +266,7 @@ class CsvResultServiceTest {
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .build();
 
@@ -276,6 +288,7 @@ class CsvResultServiceTest {
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .build();
 
@@ -294,24 +307,26 @@ class CsvResultServiceTest {
     void shouldHandleMissingLeaveForSuccessfulRecord() throws IOException {
         // Given
         UUID jobId = UUID.randomUUID();
-        UUID leaveId = UUID.randomUUID();
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .build();
+
+        // Create metadata with missing leave data (only has userid)
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("userid", "user1");
 
         BulkUploadRecord record1 = BulkUploadRecord.builder()
                 .id(1L)
                 .job(job)
                 .rowNumber(2)
-                .userId("user1")
+                .metadata(metadata)
                 .status(BulkUploadRecord.BulkRecordStatus.SUCCESS)
-                .leaveId(leaveId)
                 .build();
 
         when(bulkUploadRecordRepository.findByJobId(jobId)).thenReturn(new ArrayList<>(List.of(record1)));
-        when(leaveRepository.findById(leaveId)).thenReturn(java.util.Optional.empty());
 
         // When
         String resultPath = csvResultService.generateResultFile(job);
@@ -321,7 +336,8 @@ class CsvResultServiceTest {
         Path resultFile = Path.of(resultPath);
         List<String> lines = Files.readAllLines(resultFile);
         assertThat(lines.get(1)).contains("user1");
-        assertThat(lines.get(1)).contains("data not found");
+        // Missing fields should show as empty strings (our mock returns empty for missing metadata)
+        assertThat(lines.get(1)).contains("SUCCESS");
     }
 
     @Test
@@ -332,6 +348,7 @@ class CsvResultServiceTest {
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .build();
 
@@ -339,7 +356,7 @@ class CsvResultServiceTest {
                 .id(1L)
                 .job(job)
                 .rowNumber(2)
-                .userId("user1")
+                .metadata(createTestMetadata("user1"))
                 .status(BulkUploadRecord.BulkRecordStatus.ERROR)
                 .errorMessage(null)
                 .build();
@@ -362,36 +379,30 @@ class CsvResultServiceTest {
     void shouldHandleHalfDayLeaveDurationType() throws IOException {
         // Given
         UUID jobId = UUID.randomUUID();
-        UUID leaveId = UUID.randomUUID();
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .build();
+
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("userid", "user1");
+        metadata.put("startdate", "2024-01-01");
+        metadata.put("enddate", "2024-01-05");
+        metadata.put("type", "ANNUAL_LEAVE");
+        metadata.put("durationtype", "FIRST_HALF");
 
         BulkUploadRecord record1 = BulkUploadRecord.builder()
                 .id(1L)
                 .job(job)
                 .rowNumber(2)
-                .userId("user1")
+                .metadata(metadata)
                 .status(BulkUploadRecord.BulkRecordStatus.SUCCESS)
-                .leaveId(leaveId)
                 .build();
 
-        Leave leave1 = Leave.builder()
-                .id(leaveId)
-                .userId("user1")
-                .dateRange(DateRange.builder()
-                        .startDate(LocalDate.of(2024, 1, 1))
-                        .endDate(LocalDate.of(2024, 1, 1))
-                        .build())
-                .type(LeaveType.ANNUAL_LEAVE)
-                .durationType(LeaveDurationType.FIRST_HALF)
-                .status(LeaveStatus.APPROVED)
-                .build();
 
         when(bulkUploadRecordRepository.findByJobId(jobId)).thenReturn(new ArrayList<>(List.of(record1)));
-        when(leaveRepository.findById(leaveId)).thenReturn(java.util.Optional.of(leave1));
 
         // When
         String resultPath = csvResultService.generateResultFile(job);
@@ -408,36 +419,30 @@ class CsvResultServiceTest {
     void shouldHandleOptionalHolidayLeaveType() throws IOException {
         // Given
         UUID jobId = UUID.randomUUID();
-        UUID leaveId = UUID.randomUUID();
 
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .fileName("test.csv")
                 .build();
+
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("userid", "user1");
+        metadata.put("startdate", "2024-01-01");
+        metadata.put("enddate", "2024-01-05");
+        metadata.put("type", "OPTIONAL_HOLIDAY");
+        metadata.put("durationtype", "FULL_DAY");
 
         BulkUploadRecord record1 = BulkUploadRecord.builder()
                 .id(1L)
                 .job(job)
                 .rowNumber(2)
-                .userId("user1")
+                .metadata(metadata)
                 .status(BulkUploadRecord.BulkRecordStatus.SUCCESS)
-                .leaveId(leaveId)
                 .build();
 
-        Leave leave1 = Leave.builder()
-                .id(leaveId)
-                .userId("user1")
-                .dateRange(DateRange.builder()
-                        .startDate(LocalDate.of(2024, 12, 25))
-                        .endDate(LocalDate.of(2024, 12, 25))
-                        .build())
-                .type(LeaveType.OPTIONAL_HOLIDAY)
-                .durationType(LeaveDurationType.FULL_DAY)
-                .status(LeaveStatus.APPROVED)
-                .build();
 
         when(bulkUploadRecordRepository.findByJobId(jobId)).thenReturn(new ArrayList<>(List.of(record1)));
-        when(leaveRepository.findById(leaveId)).thenReturn(java.util.Optional.of(leave1));
 
         // When
         String resultPath = csvResultService.generateResultFile(job);
@@ -447,5 +452,15 @@ class CsvResultServiceTest {
         Path resultFile = Path.of(resultPath);
         List<String> lines = Files.readAllLines(resultFile);
         assertThat(lines.get(1)).contains("OPTIONAL_HOLIDAY");
+    }
+
+    private Map<String, String> createTestMetadata(String userId) {
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("userid", userId);
+        metadata.put("startdate", "2024-01-01");
+        metadata.put("enddate", "2024-01-05");
+        metadata.put("type", "ANNUAL_LEAVE");
+        metadata.put("durationtype", "FULL_DAY");
+        return metadata;
     }
 }

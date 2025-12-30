@@ -5,5 +5,5 @@ public enum SourceType {
     SLACK,
     CALENDAR,
     KIMAI,
-    CSV_BULK
+    BULK_UPLOAD
 }

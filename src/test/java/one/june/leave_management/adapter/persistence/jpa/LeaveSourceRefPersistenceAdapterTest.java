@@ -427,7 +427,7 @@ class LeaveSourceRefPersistenceAdapterTest {
         @DisplayName("Should return empty when source reference not found with leave")
         void shouldReturnEmptyWhenSourceRefNotFoundWithLeave() {
             // Given
-            SourceType sourceType = SourceType.CSV_BULK;
+            SourceType sourceType = SourceType.BULK_UPLOAD;
             String sourceId = "csv-999";
 
             when(leaveSourceRefJpaRepository.findBySourceTypeAndSourceIdWithLeave(sourceType, sourceId))

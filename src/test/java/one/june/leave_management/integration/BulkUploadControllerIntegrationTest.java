@@ -6,11 +6,9 @@ import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJo
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadRecordRepository;
 import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -29,7 +27,7 @@ import static org.hamcrest.Matchers.*;
  * Integration tests for Bulk Upload endpoints using MockMvc.
  * Tests CSV file upload, status tracking, and result file download.
  */
-@IntegrationTest(transactional = false)
+@IntegrationTest(transactional = true)
 @DisplayName("Bulk Upload Controller Integration Tests")
 class BulkUploadControllerIntegrationTest {
 
@@ -172,7 +170,7 @@ class BulkUploadControllerIntegrationTest {
     }
 
     @Test
-    @Disabled
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     @DisplayName("Should download result file for completed job")
     void shouldDownloadResultFileForCompletedJob() throws Exception {
         // Given

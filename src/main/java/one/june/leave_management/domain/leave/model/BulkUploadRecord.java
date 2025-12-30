@@ -1,6 +1,7 @@
 package one.june.leave_management.domain.leave.model;
 
 import jakarta.persistence.*;
+import one.june.leave_management.adapter.persistence.jpa.converter.MetadataConverter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -10,6 +11,8 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -35,8 +38,8 @@ public class BulkUploadRecord {
     @Column(name = "row_number", nullable = false)
     private Integer rowNumber;
 
-    @Column(name = "user_id", nullable = false)
-    private String userId;
+    @Column(name = "entity_id")
+    private UUID entityId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -45,8 +48,10 @@ public class BulkUploadRecord {
     @Column(name = "error_message", length = 1000)
     private String errorMessage;
 
-    @Column(name = "leave_id")
-    private UUID leaveId;
+    @Convert(converter = MetadataConverter.class)
+    @Column(name = "metadata", nullable = false, columnDefinition = "TEXT")
+    @Builder.Default
+    private Map<String, String> metadata = new HashMap<>();
 
     @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt;
@@ -54,26 +59,46 @@ public class BulkUploadRecord {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (metadata == null) {
+            metadata = new HashMap<>();
+        }
     }
 
-    public static BulkUploadRecord createSuccess(BulkUploadJob job, Integer rowNumber, String userId, UUID leaveId) {
-        return BulkUploadRecord.builder()
-                .job(job)
-                .rowNumber(rowNumber)
-                .userId(userId)
-                .status(BulkRecordStatus.SUCCESS)
-                .leaveId(leaveId)
-                .build();
+    /**
+     * Mark this record as successfully processed.
+     */
+    public void markAsSuccess() {
+        this.status = BulkRecordStatus.SUCCESS;
     }
 
-    public static BulkUploadRecord createFailure(BulkUploadJob job, Integer rowNumber, String userId, String errorMessage) {
-        return BulkUploadRecord.builder()
-                .job(job)
-                .rowNumber(rowNumber)
-                .userId(userId)
-                .status(BulkRecordStatus.ERROR)
-                .errorMessage(errorMessage)
-                .build();
+    /**
+     * Mark this record as failed with an error message.
+     * @param errorMessage The error message describing what went wrong
+     */
+    public void markAsFailure(String errorMessage) {
+        this.status = BulkRecordStatus.ERROR;
+        this.errorMessage = errorMessage;
+    }
+
+    /**
+     * Add a metadata key-value pair.
+     * @param key The metadata key
+     * @param value The metadata value
+     */
+    public void addMetadata(String key, String value) {
+        if (this.metadata == null) {
+            this.metadata = new HashMap<>();
+        }
+        this.metadata.put(key, value);
+    }
+
+    /**
+     * Get a metadata value by key.
+     * @param key The metadata key
+     * @return The value, or null if not found
+     */
+    public String getMetadataValue(String key) {
+        return metadata != null ? metadata.get(key) : null;
     }
 
     public enum BulkRecordStatus {

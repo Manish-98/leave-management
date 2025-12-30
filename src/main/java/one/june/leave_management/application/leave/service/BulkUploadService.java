@@ -1,47 +1,47 @@
 package one.june.leave_management.application.leave.service;
 
 import lombok.extern.slf4j.Slf4j;
-import one.june.leave_management.adapter.inbound.web.csv.CsvLeaveParser;
+import one.june.leave_management.adapter.inbound.web.csv.CsvLeaveParserStrategy;
+import one.june.leave_management.adapter.inbound.web.csv.ParsedResult;
 import one.june.leave_management.adapter.inbound.web.dto.BulkUploadResponse;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
+import one.june.leave_management.common.event.EntityEvent;
+import one.june.leave_management.common.event.EntityType;
+import one.june.leave_management.common.event.EventType;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.domain.leave.model.BulkUploadJob;
 import one.june.leave_management.domain.leave.model.BulkUploadJob.BulkUploadStatus;
+import one.june.leave_management.domain.leave.model.BulkUploadType;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJobRepository;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class BulkUploadService {
 
-    private final CsvLeaveParser csvLeaveParser;
-
-    private final LeaveService leaveService;
-
+    private final CsvLeaveParserStrategy csvLeaveParserStrategy;
     private final BulkUploadJobRepository bulkUploadJobRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    @Lazy
-    private final BulkUploadService self;
-
-    public BulkUploadService(CsvLeaveParser csvLeaveParser,
-                               LeaveService leaveService,
-                               BulkUploadJobRepository bulkUploadJobRepository,
-                               @Lazy BulkUploadService self) {
-        this.csvLeaveParser = csvLeaveParser;
-        this.leaveService = leaveService;
+    public BulkUploadService(CsvLeaveParserStrategy csvLeaveParserStrategy,
+                             BulkUploadJobRepository bulkUploadJobRepository,
+                             ApplicationEventPublisher eventPublisher) {
+        this.csvLeaveParserStrategy = csvLeaveParserStrategy;
         this.bulkUploadJobRepository = bulkUploadJobRepository;
-        this.self = self;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
-     * Initiate bulk upload process
+     * Initiate bulk upload process for leaves
      *
      * @param file CSV file to upload
      * @return BulkUploadResponse with jobId
@@ -54,18 +54,30 @@ public class BulkUploadService {
         // Generate job ID
         UUID jobId = UUID.randomUUID();
 
-        // Parse CSV to get commands and total count
-        List<LeaveIngestionCommand> commands;
+        // Parse CSV to get parsed results (commands + metadata)
+        List<ParsedResult<LeaveIngestionCommand>> parsedResults;
         try {
-            commands = csvLeaveParser.parse(file, jobId.toString());
+            parsedResults = csvLeaveParserStrategy.parse(file, jobId.toString());
         } catch (Exception e) {
             log.error("Failed to parse CSV file: {}", e.getMessage(), e);
             throw new IllegalArgumentException("Failed to parse CSV file: " + e.getMessage(), e);
         }
 
-        // Create job entity
+        // Extract commands from parsed results
+        List<LeaveIngestionCommand> commands = parsedResults.stream()
+                .filter(ParsedResult::isSuccess)
+                .map(ParsedResult::getCommand)
+                .collect(Collectors.toList());
+
+        // Extract metadata from parsed results
+        List<Map<String, String>> metadataList = parsedResults.stream()
+                .map(ParsedResult::getCsvMetadata)
+                .collect(Collectors.toList());
+
+        // Create job entity with type LEAVE
         BulkUploadJob job = BulkUploadJob.builder()
                 .id(jobId)
+                .type(BulkUploadType.LEAVE)
                 .status(BulkUploadStatus.PROCESSING)
                 .totalRecords(commands.size())
                 .successfulRecords(0)
@@ -74,17 +86,22 @@ public class BulkUploadService {
                 .build();
 
         bulkUploadJobRepository.save(job);
+        bulkUploadJobRepository.flush(); // Ensure job is persisted before event is published
 
         log.info("Created bulk upload job {} with {} records", jobId, commands.size());
 
-        // Trigger async processing using self-reference for proxy to work
-        // Fall back to direct call for unit tests where self is null
-        if (self != null) {
-            self.processBulkUploadAsync(job, commands);
-        } else {
-            log.warn("Self-reference is null, calling processBulkUploadAsync synchronously");
-            processBulkUploadAsync(job, commands);
-        }
+        // Publish event to trigger async processing after transaction commits
+        // Include both commands and metadata for processing
+        EntityEvent event = EntityEvent.builder()
+                .eventType(EventType.BULK_UPLOAD_JOB_CREATED)
+                .entityType(EntityType.BULK_UPLOAD_JOB)
+                .entityId(jobId)
+                .metadata(Map.of(
+                        "commands", commands,
+                        "csvMetadata", metadataList
+                ))
+                .build();
+        eventPublisher.publishEvent(event);
 
         // Return immediate response
         return BulkUploadResponse.builder()
@@ -95,22 +112,6 @@ public class BulkUploadService {
                 .failedRecords(0)
                 .resultAvailable(false)
                 .build();
-    }
-
-    /**
-     * Process bulk upload asynchronously
-     */
-    @Async("taskExecutor")
-    protected void processBulkUploadAsync(BulkUploadJob job, List<LeaveIngestionCommand> commands) {
-        log.info("Starting async processing for job {}", job.getId());
-
-        try {
-            leaveService.bulkIngestAsync(job, commands);
-        } catch (Exception e) {
-            log.error("Failed to process bulk upload job {}", job.getId(), e);
-            job.markAsFailed();
-            bulkUploadJobRepository.save(job);
-        }
     }
 
     /**

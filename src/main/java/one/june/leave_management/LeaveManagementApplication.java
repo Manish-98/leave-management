@@ -2,8 +2,10 @@ package one.june.leave_management;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @SpringBootApplication(scanBasePackages = "one.june.leave_management")
+@EnableJpaRepositories(basePackages = "one.june.leave_management")
 public class LeaveManagementApplication {
 
 	public static void main(String[] args) {

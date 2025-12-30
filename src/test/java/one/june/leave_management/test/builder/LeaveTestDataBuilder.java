@@ -11,6 +11,8 @@ import one.june.leave_management.domain.leave.model.LeaveType;
 import one.june.leave_management.domain.leave.model.SourceType;
 
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -110,25 +112,38 @@ public class LeaveTestDataBuilder {
 
     /**
      * Creates a BulkUploadRecord for a successful row.
-     * Note: startDate, endDate, type, durationType are stored in the leave entity, not in the record.
+     * Note: All CSV data is now stored in metadata.
      */
     public static BulkUploadRecord.BulkUploadRecordBuilder successRecord(Integer rowNumber) {
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("userid", "test-user");
+        metadata.put("startdate", "2024-01-01");
+        metadata.put("enddate", "2024-01-05");
+        metadata.put("type", "ANNUAL_LEAVE");
+        metadata.put("durationtype", "FULL_DAY");
+
         return BulkUploadRecord.builder()
                 .rowNumber(rowNumber)
-                .userId("test-user")
                 .status(BulkUploadRecord.BulkRecordStatus.SUCCESS)
-                .leaveId(UUID.randomUUID());
+                .metadata(metadata);
     }
 
     /**
      * Creates a BulkUploadRecord for a failed row.
      */
     public static BulkUploadRecord.BulkUploadRecordBuilder errorRecord(Integer rowNumber, String errorMessage) {
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("userid", "test-user");
+        metadata.put("startdate", "2024-01-01");
+        metadata.put("enddate", "2024-01-05");
+        metadata.put("type", "ANNUAL_LEAVE");
+        metadata.put("durationtype", "FULL_DAY");
+
         return BulkUploadRecord.builder()
                 .rowNumber(rowNumber)
-                .userId("test-user")
                 .status(BulkUploadRecord.BulkRecordStatus.ERROR)
-                .errorMessage(errorMessage);
+                .errorMessage(errorMessage)
+                .metadata(metadata);
     }
 
     /**
@@ -193,7 +208,7 @@ public class LeaveTestDataBuilder {
             String type
     ) {
         return LeaveIngestionRequest.builder()
-                .sourceType(SourceType.CSV_BULK)
+                .sourceType(SourceType.BULK_UPLOAD)
                 .sourceId("csv-bulk-upload")
                 .userId(userId)
                 .dateRange(DateRange.builder()
