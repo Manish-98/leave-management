@@ -28,8 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for Optional Holiday Controller.
  * Tests CRUD operations for optional holidays via REST API.
+ * Uses transactional=true for automatic test isolation and rollback.
+ * Test data is created via API calls to validate controller endpoints.
  */
-@IntegrationTest(transactional = false)
+@IntegrationTest
 @DisplayName("Optional Holiday Controller Integration Tests")
 class OptionalHolidayControllerIntegrationTest {
 

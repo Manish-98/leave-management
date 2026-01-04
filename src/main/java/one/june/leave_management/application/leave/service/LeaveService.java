@@ -95,8 +95,6 @@ public class LeaveService {
         existingSourceRef.orElseGet(() -> createSourceReference(command, leave));
 
         leaveDomainService.validateLeaveForPersistence(leave);
-        leaveDomainService.validateNoOverlappingLeaves(leave);
-        leaveDomainService.validateOptionalHolidayDate(leave);
         Leave savedLeave = leaveRepository.save(leave);
         performOutboundSync(savedLeave, command.getSourceType());
 

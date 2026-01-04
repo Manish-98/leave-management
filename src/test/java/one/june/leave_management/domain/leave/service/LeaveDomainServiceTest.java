@@ -10,11 +10,16 @@ import one.june.leave_management.domain.leave.model.LeaveType;
 import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
 import one.june.leave_management.domain.leave.port.OptionalHolidayRepository;
+import one.june.leave_management.domain.leave.validation.LeaveValidationResult;
+import one.june.leave_management.domain.leave.validation.LeaveValidationStrategyBase;
+import one.june.leave_management.domain.leave.validation.LeaveValidationStrategyRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.time.LocalDate;
 import java.util.Collections;
@@ -29,6 +34,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class LeaveDomainServiceTest {
 
     @Mock
@@ -36,6 +42,15 @@ class LeaveDomainServiceTest {
 
     @Mock
     private OptionalHolidayRepository optionalHolidayRepository;
+
+    @Mock
+    private LeaveValidationStrategyRegistry strategyRegistry;
+
+    @Mock
+    private LeaveValidationStrategyBase annualLeaveStrategy;
+
+    @Mock
+    private LeaveValidationStrategyBase optionalHolidayStrategy;
 
     private LeaveDomainService leaveDomainService;
 
@@ -45,144 +60,13 @@ class LeaveDomainServiceTest {
 
     @BeforeEach
     void setUp() {
-        leaveDomainService = new LeaveDomainService(leaveRepository, optionalHolidayRepository);
-    }
+        // Setup strategy registry mock
+        when(strategyRegistry.getStrategy(LeaveType.ANNUAL_LEAVE)).thenReturn(annualLeaveStrategy);
+        when(strategyRegistry.getStrategy(LeaveType.OPTIONAL_HOLIDAY)).thenReturn(optionalHolidayStrategy);
+        when(annualLeaveStrategy.getType()).thenReturn(LeaveType.ANNUAL_LEAVE);
+        when(optionalHolidayStrategy.getType()).thenReturn(LeaveType.OPTIONAL_HOLIDAY);
 
-    // validateNoOverlappingLeaves tests
-
-    @Test
-    void shouldAllowLeaveWhenNoOverlappingLeavesExist() {
-        DateRange dateRange = DateRange.builder()
-                .startDate(LocalDate.now().plusDays(10))
-                .endDate(LocalDate.now().plusDays(12))
-                .build();
-
-        Leave leave = Leave.builder()
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.ANNUAL_LEAVE)
-                .status(LeaveStatus.REQUESTED)
-                .build();
-
-        when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange)))
-                .thenReturn(Collections.emptyList());
-
-        assertDoesNotThrow(() -> leaveDomainService.validateNoOverlappingLeaves(leave));
-        verify(leaveRepository).findOverlappingLeaves(TEST_USER_ID, dateRange);
-    }
-
-    @Test
-    void shouldRejectLeaveWhenOverlappingLeaveExists() {
-        DateRange dateRange = DateRange.builder()
-                .startDate(LocalDate.now().plusDays(10))
-                .endDate(LocalDate.now().plusDays(12))
-                .build();
-
-        Leave newLeave = Leave.builder()
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.ANNUAL_LEAVE)
-                .status(LeaveStatus.REQUESTED)
-                .build();
-
-        Leave existingLeave = Leave.builder()
-                .id(TEST_LEAVE_ID_1)
-                .userId(TEST_USER_ID)
-                .dateRange(DateRange.builder()
-                        .startDate(LocalDate.now().plusDays(11))
-                        .endDate(LocalDate.now().plusDays(15))
-                        .build())
-                .type(LeaveType.ANNUAL_LEAVE)
-                .status(LeaveStatus.APPROVED)
-                .build();
-
-        when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange)))
-                .thenReturn(Collections.singletonList(existingLeave));
-
-        OverlappingLeaveException exception = assertThrows(
-                OverlappingLeaveException.class,
-                () -> leaveDomainService.validateNoOverlappingLeaves(newLeave)
-        );
-
-        assertEquals(TEST_USER_ID, exception.getUserId());
-        assertEquals(dateRange.getStartDate(), exception.getStartDate());
-        assertEquals(dateRange.getEndDate(), exception.getEndDate());
-        assertEquals(existingLeave.getId(), exception.getExistingLeaveId());
-        verify(leaveRepository).findOverlappingLeaves(TEST_USER_ID, dateRange);
-    }
-
-    @Test
-    void shouldAllowLeaveUpdateWhenOnlySameLeaveExists() {
-        DateRange dateRange = DateRange.builder()
-                .startDate(LocalDate.now().plusDays(10))
-                .endDate(LocalDate.now().plusDays(12))
-                .build();
-
-        Leave existingLeave = Leave.builder()
-                .id(TEST_LEAVE_ID_1)
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.ANNUAL_LEAVE)
-                .status(LeaveStatus.REQUESTED)
-                .build();
-
-        when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange), eq(TEST_LEAVE_ID_1)))
-                .thenReturn(Collections.emptyList());
-
-        assertDoesNotThrow(() -> leaveDomainService.validateNoOverlappingLeaves(existingLeave));
-        verify(leaveRepository).findOverlappingLeaves(TEST_USER_ID, dateRange, TEST_LEAVE_ID_1);
-    }
-
-    @Test
-    void shouldRejectLeaveUpdateWhenOtherOverlappingLeaveExists() {
-        DateRange dateRange = DateRange.builder()
-                .startDate(LocalDate.now().plusDays(10))
-                .endDate(LocalDate.now().plusDays(12))
-                .build();
-
-        Leave updatingLeave = Leave.builder()
-                .id(TEST_LEAVE_ID_1)
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.ANNUAL_LEAVE)
-                .status(LeaveStatus.REQUESTED)
-                .build();
-
-        Leave otherExistingLeave = Leave.builder()
-                .id(TEST_LEAVE_ID_2)
-                .userId(TEST_USER_ID)
-                .dateRange(DateRange.builder()
-                        .startDate(LocalDate.now().plusDays(11))
-                        .endDate(LocalDate.now().plusDays(15))
-                        .build())
-                .type(LeaveType.OPTIONAL_HOLIDAY)
-                .status(LeaveStatus.APPROVED)
-                .build();
-
-        when(leaveRepository.findOverlappingLeaves(eq(TEST_USER_ID), eq(dateRange), eq(TEST_LEAVE_ID_1)))
-                .thenReturn(Collections.singletonList(otherExistingLeave));
-
-        OverlappingLeaveException exception = assertThrows(
-                OverlappingLeaveException.class,
-                () -> leaveDomainService.validateNoOverlappingLeaves(updatingLeave)
-        );
-
-        assertEquals(TEST_USER_ID, exception.getUserId());
-        assertEquals(dateRange.getStartDate(), exception.getStartDate());
-        assertEquals(dateRange.getEndDate(), exception.getEndDate());
-        assertEquals(otherExistingLeave.getId(), exception.getExistingLeaveId());
-        verify(leaveRepository).findOverlappingLeaves(TEST_USER_ID, dateRange, TEST_LEAVE_ID_1);
-    }
-
-    @Test
-    void shouldRejectLeaveWhenNullLeaveIsProvided() {
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> leaveDomainService.validateNoOverlappingLeaves(null)
-        );
-
-        assertEquals("Leave cannot be null", exception.getMessage());
-        verifyNoInteractions(leaveRepository);
+        leaveDomainService = new LeaveDomainService(leaveRepository, optionalHolidayRepository, strategyRegistry);
     }
 
     // validateLeaveForPersistence tests
@@ -203,6 +87,8 @@ class LeaveDomainServiceTest {
                 .durationType(LeaveDurationType.FULL_DAY)
                 .build();
 
+        when(annualLeaveStrategy.validate(leave)).thenReturn(LeaveValidationResult.success());
+
         assertDoesNotThrow(() -> leaveDomainService.validateLeaveForPersistence(leave));
     }
 
@@ -213,8 +99,8 @@ class LeaveDomainServiceTest {
                 () -> leaveDomainService.validateLeaveForPersistence(null)
         );
 
-        assertEquals("Leave cannot be null", exception.getMessage());
-        verifyNoInteractions(leaveRepository);
+        assertEquals("Leave or leave type cannot be null", exception.getMessage());
+        verifyNoInteractions(annualLeaveStrategy);
     }
 
     @Test
@@ -231,6 +117,9 @@ class LeaveDomainServiceTest {
                 .status(LeaveStatus.REQUESTED)
                 .durationType(LeaveDurationType.FULL_DAY)
                 .build();
+
+        when(annualLeaveStrategy.validate(leave))
+                .thenReturn(LeaveValidationResult.failure("New leaves must have at least one source reference"));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -255,6 +144,9 @@ class LeaveDomainServiceTest {
                 .status(null)
                 .durationType(LeaveDurationType.FULL_DAY)
                 .build();
+
+        when(annualLeaveStrategy.validate(leave))
+                .thenReturn(LeaveValidationResult.failure("Leave status cannot be null"));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -285,7 +177,7 @@ class LeaveDomainServiceTest {
                 () -> leaveDomainService.validateLeaveForPersistence(leave)
         );
 
-        assertEquals("Leave type cannot be null", exception.getMessage());
+        assertEquals("Leave or leave type cannot be null", exception.getMessage());
     }
 
     @Test
@@ -303,6 +195,9 @@ class LeaveDomainServiceTest {
                 .status(LeaveStatus.REQUESTED)
                 .durationType(null)
                 .build();
+
+        when(annualLeaveStrategy.validate(leave))
+                .thenReturn(LeaveValidationResult.failure("Leave duration type cannot be null"));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -330,6 +225,9 @@ class LeaveDomainServiceTest {
                 .durationType(LeaveDurationType.FIRST_HALF)
                 .build();
 
+        when(annualLeaveStrategy.validate(leave))
+                .thenReturn(LeaveValidationResult.failure("Half-day leaves must have the same start and end date"));
+
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> leaveDomainService.validateLeaveForPersistence(leave)
@@ -355,6 +253,8 @@ class LeaveDomainServiceTest {
                 .durationType(LeaveDurationType.SECOND_HALF)
                 .build();
 
+        when(annualLeaveStrategy.validate(leave)).thenReturn(LeaveValidationResult.success());
+
         assertDoesNotThrow(() -> leaveDomainService.validateLeaveForPersistence(leave));
     }
 
@@ -374,135 +274,14 @@ class LeaveDomainServiceTest {
                 .durationType(LeaveDurationType.FULL_DAY)
                 .build();
 
+        when(annualLeaveStrategy.validate(leave))
+                .thenReturn(LeaveValidationResult.failure("Approved leaves must be at least 1 day long"));
+
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> leaveDomainService.validateLeaveForPersistence(leave)
         );
 
         assertEquals("Approved leaves must be at least 1 day long", exception.getMessage());
-    }
-
-    // validateOptionalHolidayDate tests
-
-    @Test
-    void shouldSkipValidationForAnnualLeave() {
-        LocalDate date = LocalDate.now().plusDays(10);
-        DateRange dateRange = DateRange.builder()
-                .startDate(date)
-                .endDate(date)
-                .build();
-
-        Leave leave = Leave.builder()
-                .id(TEST_LEAVE_ID_1)
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.ANNUAL_LEAVE)
-                .status(LeaveStatus.REQUESTED)
-                .durationType(LeaveDurationType.FULL_DAY)
-                .build();
-
-        assertDoesNotThrow(() -> leaveDomainService.validateOptionalHolidayDate(leave));
-        verifyNoInteractions(optionalHolidayRepository);
-    }
-
-    @Test
-    void shouldAcceptValidSingleDayOptionalHoliday() {
-        LocalDate date = LocalDate.now().plusDays(10);
-        DateRange dateRange = DateRange.builder()
-                .startDate(date)
-                .endDate(date)
-                .build();
-
-        Leave leave = Leave.builder()
-                .id(TEST_LEAVE_ID_1)
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.OPTIONAL_HOLIDAY)
-                .status(LeaveStatus.REQUESTED)
-                .durationType(LeaveDurationType.FULL_DAY)
-                .build();
-
-        OptionalHoliday holiday = OptionalHoliday.builder()
-                .id(UUID.randomUUID())
-                .date(date)
-                .name("Test Holiday")
-                .build();
-
-        when(optionalHolidayRepository.findByDate(date)).thenReturn(Optional.of(holiday));
-
-        assertDoesNotThrow(() -> leaveDomainService.validateOptionalHolidayDate(leave));
-        verify(optionalHolidayRepository).findByDate(date);
-    }
-
-    @Test
-    void shouldRejectMultiDayOptionalHoliday() {
-        LocalDate startDate = LocalDate.now().plusDays(10);
-        LocalDate endDate = LocalDate.now().plusDays(11);
-        DateRange dateRange = DateRange.builder()
-                .startDate(startDate)
-                .endDate(endDate)
-                .build();
-
-        Leave leave = Leave.builder()
-                .id(TEST_LEAVE_ID_1)
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.OPTIONAL_HOLIDAY)
-                .status(LeaveStatus.REQUESTED)
-                .durationType(LeaveDurationType.FULL_DAY)
-                .build();
-
-        InvalidOptionalHolidayException exception = assertThrows(
-                InvalidOptionalHolidayException.class,
-                () -> leaveDomainService.validateOptionalHolidayDate(leave)
-        );
-
-        assertEquals(TEST_USER_ID, exception.getUserId());
-        assertEquals(startDate, exception.getRequestedDate());
-        assertEquals(TEST_LEAVE_ID_1, exception.getLeaveId());
-        assertTrue(exception.getMessage().contains("Optional holidays must be single-day only"));
-        verifyNoInteractions(optionalHolidayRepository);
-    }
-
-    @Test
-    void shouldRejectOptionalHolidayWhenDateNotFoundInDatabase() {
-        LocalDate date = LocalDate.now().plusDays(10);
-        DateRange dateRange = DateRange.builder()
-                .startDate(date)
-                .endDate(date)
-                .build();
-
-        Leave leave = Leave.builder()
-                .id(TEST_LEAVE_ID_1)
-                .userId(TEST_USER_ID)
-                .dateRange(dateRange)
-                .type(LeaveType.OPTIONAL_HOLIDAY)
-                .status(LeaveStatus.REQUESTED)
-                .durationType(LeaveDurationType.FULL_DAY)
-                .build();
-
-        when(optionalHolidayRepository.findByDate(date)).thenReturn(Optional.empty());
-
-        InvalidOptionalHolidayException exception = assertThrows(
-                InvalidOptionalHolidayException.class,
-                () -> leaveDomainService.validateOptionalHolidayDate(leave)
-        );
-
-        assertEquals(TEST_USER_ID, exception.getUserId());
-        assertEquals(date, exception.getRequestedDate());
-        assertEquals(TEST_LEAVE_ID_1, exception.getLeaveId());
-        assertTrue(exception.getMessage().contains("is not a valid optional holiday"));
-        verify(optionalHolidayRepository).findByDate(date);
-    }
-
-    @Test
-    void shouldRejectNullLeaveForOptionalHolidayValidation() {
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> leaveDomainService.validateOptionalHolidayDate(null)
-        );
-
-        assertEquals("Leave cannot be null", exception.getMessage());
-        verifyNoInteractions(optionalHolidayRepository);
     }
 }

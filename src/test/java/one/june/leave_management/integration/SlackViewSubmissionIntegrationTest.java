@@ -3,6 +3,7 @@ package one.june.leave_management.integration;
 import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.transaction.BeforeTransaction;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
@@ -30,11 +31,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Integration tests for Slack view submission API.
  * Tests the complete flow from Slack modal submission to leave creation.
  * Uses H2 in-memory database with real signature verification using test secret.
- * <p>
- * Note: These tests are NOT transactional because they test async processing.
- * The @Transactional annotation would prevent the async method from seeing the data.
+ * Uses @BeforeTransaction to set up test data in committed state,
+ * allowing HTTP requests via RestTemplate to see the data while keeping
+ * tests transactional for proper isolation.
  */
-@IntegrationTest(transactional = false)
+@IntegrationTest
 class SlackViewSubmissionIntegrationTest {
 
     @LocalServerPort
@@ -54,6 +55,50 @@ class SlackViewSubmissionIntegrationTest {
         baseUrl = "http://localhost:" + port + "/integrations/slack";
         restTemplate = new RestTemplate();
     }
+
+    /**
+     * Sets up test data in the database before each test transaction.
+     * This method runs in a separate transaction that commits, making the data
+     * visible to subsequent HTTP requests via RestTemplate.
+     */
+    @BeforeTransaction
+    void setUpTestData() {
+        // Clean up existing test employees
+        String[] slackIds = {"U12345", "U67890", "U11111", "U22222", "U99999"};
+        for (String slackId : slackIds) {
+            jdbcTemplate.update("DELETE FROM leave WHERE user_id IN (SELECT id FROM employee WHERE slack_id = ?)", slackId);
+            jdbcTemplate.update("DELETE FROM employee WHERE slack_id = ?", slackId);
+        }
+
+        // Create test employees for all Slack user IDs used in tests
+        int i = 0;
+        for (String slackId : slackIds) {
+            String baseUuid = "123e4567-e89b-12d3-a456-426614174" + String.format("%03d", i);
+            String employeeSql = String.format(
+                    "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
+                    "VALUES (?, 'Test User %d', '%s', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    i, slackId);
+            jdbcTemplate.update(employeeSql, baseUuid);
+            i++;
+        }
+
+        // Clean up any existing optional holidays
+        jdbcTemplate.update("DELETE FROM optional_holidays");
+
+        // Create optional holiday needed for test on 2024-01-01
+        String holidayId = java.util.UUID.randomUUID().toString();
+        jdbcTemplate.update(
+                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                holidayId, LocalDate.of(2024, Month.JANUARY, 1), "New Year's Day", "First day of the year"
+        );
+
+        // Store the holiday ID for use in tests
+        testHolidayId = holidayId;
+    }
+
+    // Store the holiday ID for use in tests
+    private static String testHolidayId;
 
     private HttpEntity<String> createSlackRequestEntity(String jsonPayload) {
         // Slack sends view submissions as form-encoded payload parameter
@@ -110,40 +155,6 @@ class SlackViewSubmissionIntegrationTest {
                 WHERE leave_id = ? AND source_type = ?
                 """;
         return jdbcTemplate.queryForMap(sql, leaveId, sourceType);
-    }
-
-    /**
-     * Helper method to create an optional holiday via API
-     * Returns the UUID of the created holiday
-     */
-    private String createOptionalHolidayViaApi(LocalDate date, String name, String description) {
-        String requestBody = String.format("""
-                {
-                    "date": "%s",
-                    "name": "%s",
-                    "description": "%s"
-                }
-                """, date, name, description);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
-
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                "http://localhost:" + port + "/api/admin/optional-holidays",
-                entity,
-                String.class
-        );
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-
-        // Extract the UUID from the response
-        String idPattern = "\"id\":\"([a-f0-9\\-]+)\"";
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(idPattern);
-        java.util.regex.Matcher matcher = pattern.matcher(response.getBody());
-        assertThat(matcher.find()).isTrue();
-
-        return matcher.group(1);
     }
 
     @Test
@@ -223,9 +234,9 @@ class SlackViewSubmissionIntegrationTest {
         Thread.sleep(1000);
 
         // Then - Database validation
-        Map<String, Object> leaveRecord = getLeaveFromDatabase("U12345", "2024-07-01", "2024-07-03");
+        Map<String, Object> leaveRecord = getLeaveFromDatabase("123e4567-e89b-12d3-a456-426614174000", "2024-07-01", "2024-07-03");
         assertThat(leaveRecord).isNotNull();
-        assertThat(leaveRecord.get("user_id")).isEqualTo("U12345");
+        assertThat(leaveRecord.get("user_id")).isEqualTo("123e4567-e89b-12d3-a456-426614174000");
         assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 1));
         assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 3));
         assertThat(leaveRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
@@ -242,13 +253,7 @@ class SlackViewSubmissionIntegrationTest {
 
     @Test
     void shouldCreateOptionalHolidayLeaveFromSlackViewSubmission() throws Exception {
-        // Given - Create a test holiday via API (ensures proper transaction commit)
-        String holidayId = createOptionalHolidayViaApi(
-                LocalDate.of(2024, Month.JANUARY, 1),
-                "New Year's Day",
-                "First day of the year"
-        );
-
+        // Given - Optional holiday is already created in @BeforeTransaction
         String jsonPayload = String.format("""
                 {
                     "type": "view_submission",
@@ -277,7 +282,7 @@ class SlackViewSubmissionIntegrationTest {
                                     "holiday_select_action": {
                                         "type": "static_select",
                                         "selected_option": {
-                                            "text": {"type": "plain_text", "text": "2024-07-10 - Test Holiday"},
+                                            "text": {"type": "plain_text", "text": "2024-01-01 - New Year's Day"},
                                             "value": "%s"
                                         }
                                     }
@@ -288,7 +293,7 @@ class SlackViewSubmissionIntegrationTest {
                         "title": {"type": "plain_text", "text": "Apply for Leave"}
                     }
                 }
-                """, holidayId);
+                """, testHolidayId);
 
         // When
         var response = restTemplate.postForEntity(
@@ -304,9 +309,9 @@ class SlackViewSubmissionIntegrationTest {
         Thread.sleep(500);
 
         // Then - Database validation
-        Map<String, Object> leaveRecord = getLeaveFromDatabase("U67890", "2024-01-01", "2024-01-01");
+        Map<String, Object> leaveRecord = getLeaveFromDatabase("123e4567-e89b-12d3-a456-426614174001", "2024-01-01", "2024-01-01");
         assertThat(leaveRecord).isNotNull();
-        assertThat(leaveRecord.get("user_id")).isEqualTo("U67890");
+        assertThat(leaveRecord.get("user_id")).isEqualTo("123e4567-e89b-12d3-a456-426614174001");
         assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 1, 1));
         assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 1, 1));
         assertThat(leaveRecord.get("type")).isEqualTo("OPTIONAL_HOLIDAY");
@@ -385,9 +390,9 @@ class SlackViewSubmissionIntegrationTest {
         Thread.sleep(500);
 
         // Then - Database validation (end date should equal start date)
-        Map<String, Object> leaveRecord = getLeaveFromDatabase("U11111", "2024-07-20", "2024-07-20");
+        Map<String, Object> leaveRecord = getLeaveFromDatabase("123e4567-e89b-12d3-a456-426614174002", "2024-07-20", "2024-07-20");
         assertThat(leaveRecord).isNotNull();
-        assertThat(leaveRecord.get("user_id")).isEqualTo("U11111");
+        assertThat(leaveRecord.get("user_id")).isEqualTo("123e4567-e89b-12d3-a456-426614174002");
         assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 20));
         assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 20));
         assertThat(leaveRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
@@ -472,9 +477,9 @@ class SlackViewSubmissionIntegrationTest {
         Thread.sleep(500);
 
         // Then - Database validation
-        Map<String, Object> leaveRecord = getLeaveFromDatabase("U22222", "2024-08-01", "2024-08-05");
+        Map<String, Object> leaveRecord = getLeaveFromDatabase("123e4567-e89b-12d3-a456-426614174003", "2024-08-01", "2024-08-05");
         assertThat(leaveRecord).isNotNull();
-        assertThat(leaveRecord.get("user_id")).isEqualTo("U22222");
+        assertThat(leaveRecord.get("user_id")).isEqualTo("123e4567-e89b-12d3-a456-426614174003");
         assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 8, 1));
         assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 8, 5));
         assertThat(leaveRecord.get("type")).isEqualTo("ANNUAL_LEAVE");

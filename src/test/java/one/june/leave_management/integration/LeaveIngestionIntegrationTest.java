@@ -1,9 +1,7 @@
 package one.june.leave_management.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import one.june.leave_management.adapter.inbound.web.dto.CreateOptionalHolidayRequest;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
-import one.june.leave_management.application.leave.dto.OptionalHolidayDto;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
@@ -12,6 +10,7 @@ import one.june.leave_management.domain.leave.model.SourceType;
 import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.transaction.BeforeTransaction;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
@@ -24,6 +23,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,10 +35,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * Integration tests for Leave Ingestion API.
  * Uses H2 in-memory database with no mocking.
  * Clock is controlled through fixed dates in tests.
- * Note: transactional=false is required because tests make HTTP requests via RestTemplate,
- * and the data needs to be committed to the database for the HTTP layer to see it.
+ * Uses @BeforeTransaction to set up test data in committed state,
+ * allowing HTTP requests via RestTemplate to see the data while keeping
+ * tests transactional for proper isolation.
  */
-@IntegrationTest(transactional = false)
+@IntegrationTest
 class LeaveIngestionIntegrationTest {
 
     @LocalServerPort
@@ -53,10 +54,87 @@ class LeaveIngestionIntegrationTest {
     // Fixed date for testing
     private static final LocalDate FIXED_DATE = LocalDate.of(2024, 6, 15);
 
+    // Test employee IDs
+    private static final String EMPLOYEE_1_ID = "123e4567-e89b-12d3-a456-426614174100";
+    private static final String EMPLOYEE_2_ID = "123e4567-e89b-12d3-a456-426614174101";
+    private static final String EMPLOYEE_OVERLAP = "123e4567-e89b-12d3-a456-426614174102";
+    private static final String EMPLOYEE_NO_OVERLAP = "123e4567-e89b-12d3-a456-426614174103";
+    private static final String EMPLOYEE_HALF_DAY = "123e4567-e89b-12d3-a456-426614174104";
+    private static final String EMPLOYEE_INVALID_HALF_DAY = "123e4567-e89b-12d3-a456-426614174105";
+    private static final String EMPLOYEE_ALL_SOURCES = "123e4567-e89b-12d3-a456-426614174106";
+    private static final String EMPLOYEE_ALL_TYPES = "123e4567-e89b-12d3-a456-426614174107";
+    private static final String EMPLOYEE_ALL_STATUSES = "123e4567-e89b-12d3-a456-426614174108";
+    private static final String EMPLOYEE_ALL_DURATIONS = "123e4567-e89b-12d3-a456-426614174109";
+    private static final String EMPLOYEE_INVALID_DATE = "123e4567-e89b-12d3-a456-42661417410a";
+    private static final String EMPLOYEE_LONG_SOURCE = "123e4567-e89b-12d3-a456-42661417410b";
+    private static final String EMPLOYEE_MULTI_SOURCE = "123e4567-e89b-12d3-a456-42661417410c";
+    private static final String EMPLOYEE_OPTIONAL_VALID = "123e4567-e89b-12d3-a456-42661417410d";
+    private static final String EMPLOYEE_OPTIONAL_INVALID = "123e4567-e89b-12d3-a456-42661417410e";
+    private static final String EMPLOYEE_OPTIONAL_MULTI = "123e4567-e89b-12d3-a456-42661417410f";
+    private static final String EMPLOYEE_ANNUAL_NO_HOLIDAY = "123e4567-e89b-12d3-a456-426614174110";
+
     @BeforeEach
     void setUp() {
         baseUrl = "http://localhost:" + port + "/api/leaves";
         restTemplate = new RestTemplate();
+    }
+
+    /**
+     * Sets up test data in the database before each test transaction.
+     * This method runs in a separate transaction that commits, making the data
+     * visible to subsequent HTTP requests via RestTemplate.
+     */
+    @BeforeTransaction
+    void setUpTestData() {
+        // Clean up all test employees
+        String[] employeeIds = {
+                EMPLOYEE_1_ID, EMPLOYEE_2_ID, EMPLOYEE_OVERLAP, EMPLOYEE_NO_OVERLAP,
+                EMPLOYEE_HALF_DAY, EMPLOYEE_INVALID_HALF_DAY, EMPLOYEE_ALL_SOURCES,
+                EMPLOYEE_ALL_TYPES, EMPLOYEE_ALL_STATUSES, EMPLOYEE_ALL_DURATIONS,
+                EMPLOYEE_INVALID_DATE, EMPLOYEE_LONG_SOURCE, EMPLOYEE_MULTI_SOURCE,
+                EMPLOYEE_OPTIONAL_VALID, EMPLOYEE_OPTIONAL_INVALID, EMPLOYEE_OPTIONAL_MULTI,
+                EMPLOYEE_ANNUAL_NO_HOLIDAY
+        };
+
+        jdbcTemplate.update("DELETE FROM leave WHERE user_id IN (" +
+                String.join(",", Collections.nCopies(employeeIds.length, "?")) + ")", (Object[]) employeeIds);
+        jdbcTemplate.update("DELETE FROM employee WHERE id IN (" +
+                String.join(",", Collections.nCopies(employeeIds.length, "?")) + ")", (Object[]) employeeIds);
+
+        // Create all test employees
+        int i = 1;
+        for (String employeeId : employeeIds) {
+            jdbcTemplate.update(
+                    "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
+                    "VALUES (?, 'Test User " + i + "', 'U" + String.format("%03d", i) + "', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    employeeId);
+            i++;
+        }
+
+        // Clean up any existing optional holidays
+        jdbcTemplate.update("DELETE FROM optional_holidays");
+
+        // Create optional holidays needed for tests
+        // Holiday on 2024-06-26 (FIXED_DATE.plusDays(11)) for LeaveType enum test
+        jdbcTemplate.update(
+                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                UUID.randomUUID(), FIXED_DATE.plusDays(11), "Test Holiday for All Types", "Auto-generated for LeaveType enum test"
+        );
+
+        // Holiday on 2024-06-20 (FIXED_DATE.plusDays(5)) for validation tests
+        jdbcTemplate.update(
+                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                UUID.randomUUID(), FIXED_DATE.plusDays(5), "Test Holiday", "Test holiday description"
+        );
+
+        // Holiday on 2024-06-22 (FIXED_DATE.plusDays(7)) for multi-day validation test
+        jdbcTemplate.update(
+                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                UUID.randomUUID(), FIXED_DATE.plusDays(7), "Test Holiday 2", "Description 2"
+        );
     }
 
     private HttpEntity<LeaveIngestionRequest> createRequestEntity(LeaveIngestionRequest request) {
@@ -64,32 +142,6 @@ class LeaveIngestionIntegrationTest {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBasicAuth("test", "test");
         return new HttpEntity<>(request, headers);
-    }
-
-    /**
-     * Helper method to create an optional holiday via API.
-     * This avoids transaction isolation issues when creating test data.
-     */
-    private void createOptionalHolidayViaApi(LocalDate date, String name, String description) {
-        String optionalHolidayBaseUrl = "http://localhost:" + port + "/api/admin/optional-holidays";
-
-        CreateOptionalHolidayRequest request = CreateOptionalHolidayRequest.builder()
-                .date(date)
-                .name(name)
-                .description(description)
-                .build();
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<CreateOptionalHolidayRequest> entity = new HttpEntity<>(request, headers);
-
-        ResponseEntity<OptionalHolidayDto> response = restTemplate.postForEntity(
-                optionalHolidayBaseUrl,
-                entity,
-                OptionalHolidayDto.class
-        );
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }
 
     /**
@@ -121,7 +173,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-123")
-                .userId("user-123")
+                .userId(EMPLOYEE_1_ID)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
@@ -137,7 +189,7 @@ class LeaveIngestionIntegrationTest {
 
         String responseBody = response.getBody();
         assertThat(responseBody).isNotNull();
-        assertThat(responseBody).contains("\"userId\":\"user-123\"");
+        assertThat(responseBody).contains("\"userId\":\"" + EMPLOYEE_1_ID + "\"");
         assertThat(responseBody).contains("\"type\":\"ANNUAL_LEAVE\"");
         assertThat(responseBody).contains("\"status\":\"REQUESTED\"");
         assertThat(responseBody).contains("\"durationType\":\"FULL_DAY\"");
@@ -145,9 +197,9 @@ class LeaveIngestionIntegrationTest {
         assertThat(responseBody).contains("\"sourceId\":\"web-123\"");
 
         // Database validation
-        Map<String, Object> leaveRecord = getLeaveFromDatabase("user-123", "2024-06-16", "2024-06-18");
+        Map<String, Object> leaveRecord = getLeaveFromDatabase(EMPLOYEE_1_ID, "2024-06-16", "2024-06-18");
         assertThat(leaveRecord).isNotNull();
-        assertThat(leaveRecord.get("user_id")).isEqualTo("user-123");
+        assertThat(leaveRecord.get("user_id")).isEqualTo(EMPLOYEE_1_ID);
         assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 6, 16));
         assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 6, 18));
         assertThat(leaveRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
@@ -168,7 +220,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest firstRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-update-test")
-                .userId("user-456")
+                .userId(EMPLOYEE_2_ID)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(10))
                         .endDate(FIXED_DATE.plusDays(12))
@@ -190,7 +242,7 @@ class LeaveIngestionIntegrationTest {
         String leaveId = matcher.group(1);
 
         // Verify first creation in database
-        Map<String, Object> firstRecord = getLeaveFromDatabase("user-456", "2024-06-25", "2024-06-27");
+        Map<String, Object> firstRecord = getLeaveFromDatabase(EMPLOYEE_2_ID, "2024-06-25", "2024-06-27");
         assertThat(firstRecord).isNotNull();
         assertThat(firstRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
         assertThat(firstRecord.get("status")).isEqualTo("REQUESTED");
@@ -199,7 +251,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-update-test") // Same sourceId
-                .userId("user-456")
+                .userId(EMPLOYEE_2_ID)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(20))
                         .endDate(FIXED_DATE.plusDays(25))
@@ -218,7 +270,7 @@ class LeaveIngestionIntegrationTest {
         assertThat(secondBody).contains("\"status\":\"APPROVED\"");
 
         // Verify update in database - same leave ID but updated values
-        Map<String, Object> updatedRecord = getLeaveFromDatabase("user-456", "2024-07-05", "2024-07-10");
+        Map<String, Object> updatedRecord = getLeaveFromDatabase(EMPLOYEE_2_ID, "2024-07-05", "2024-07-10");
         assertThat(updatedRecord).isNotNull();
         assertThat(updatedRecord.get("id").toString()).isEqualTo(leaveId); // Same ID
         assertThat(updatedRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
@@ -238,7 +290,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest firstRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-overlap-1")
-                .userId("user-overlap")
+                .userId(EMPLOYEE_OVERLAP)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(5))
                         .endDate(FIXED_DATE.plusDays(10))
@@ -255,7 +307,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.SLACK)
                 .sourceId("slack-overlap-2")
-                .userId("user-overlap") // Same user
+                .userId(EMPLOYEE_OVERLAP) // Same user
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(8)) // Overlaps
                         .endDate(FIXED_DATE.plusDays(12))
@@ -278,7 +330,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest firstRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-no-overlap-1")
-                .userId("user-no-overlap")
+                .userId(EMPLOYEE_NO_OVERLAP)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
@@ -295,7 +347,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.SLACK)
                 .sourceId("slack-no-overlap-2")
-                .userId("user-no-overlap") // Same user
+                .userId(EMPLOYEE_NO_OVERLAP) // Same user
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(10)) // No overlap
                         .endDate(FIXED_DATE.plusDays(12))
@@ -315,7 +367,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-half-day")
-                .userId("user-half-day")
+                .userId(EMPLOYEE_HALF_DAY)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(1)) // Same day
@@ -336,7 +388,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-invalid-half-day")
-                .userId("user-invalid-half-day")
+                .userId(EMPLOYEE_INVALID_HALF_DAY)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3)) // Different days
@@ -360,7 +412,7 @@ class LeaveIngestionIntegrationTest {
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                     .sourceType(sourceType)
                     .sourceId(sourceType.name().toLowerCase() + "-integration-test")
-                    .userId("user-all-sources")
+                    .userId(EMPLOYEE_ALL_SOURCES)
                     .dateRange(DateRange.builder()
                             .startDate(FIXED_DATE.plusDays(1 + dayOffset * 10))
                             .endDate(FIXED_DATE.plusDays(2 + dayOffset * 10))
@@ -385,16 +437,15 @@ class LeaveIngestionIntegrationTest {
             LocalDate startDate = FIXED_DATE.plusDays(1 + dayOffset * 10);
             LocalDate endDate = FIXED_DATE.plusDays(2 + dayOffset * 10);
 
-            // For optional holidays, create a single-day holiday in the database first
+            // For optional holidays, use single day
             if (leaveType == LeaveType.OPTIONAL_HOLIDAY) {
                 endDate = startDate; // Single day
-                createOptionalHolidayViaApi(startDate, "Test Holiday for All Types", "Auto-generated for test");
             }
 
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                     .sourceType(SourceType.WEB)
                     .sourceId("web-type-" + leaveType.name())
-                    .userId("user-all-types")
+                    .userId(EMPLOYEE_ALL_TYPES)
                     .dateRange(DateRange.builder()
                             .startDate(startDate)
                             .endDate(endDate)
@@ -419,7 +470,7 @@ class LeaveIngestionIntegrationTest {
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                     .sourceType(SourceType.WEB)
                     .sourceId("web-status-" + leaveStatus.name())
-                    .userId("user-all-statuses")
+                    .userId(EMPLOYEE_ALL_STATUSES)
                     .dateRange(DateRange.builder()
                             .startDate(FIXED_DATE.plusDays(1 + dayOffset * 10))
                             .endDate(FIXED_DATE.plusDays(2 + dayOffset * 10))
@@ -444,7 +495,7 @@ class LeaveIngestionIntegrationTest {
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                     .sourceType(SourceType.WEB)
                     .sourceId("web-duration-" + durationType.name())
-                    .userId("user-all-durations")
+                    .userId(EMPLOYEE_ALL_DURATIONS)
                     .dateRange(DateRange.builder()
                             .startDate(FIXED_DATE.plusDays(1 + dayOffset * 10))
                             .endDate(FIXED_DATE.plusDays(1 + dayOffset * 10)) // Same day for half-day leaves
@@ -467,7 +518,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-invalid-date")
-                .userId("user-invalid-date")
+                .userId(EMPLOYEE_INVALID_DATE)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(5))
                         .endDate(FIXED_DATE.plusDays(2)) // End before start
@@ -530,7 +581,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId(longSourceId)
-                .userId("user-long-source-id")
+                .userId(EMPLOYEE_LONG_SOURCE)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(2))
@@ -552,7 +603,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest firstRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-multi-source")
-                .userId("user-multi-source")
+                .userId(EMPLOYEE_MULTI_SOURCE)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
@@ -580,7 +631,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.SLACK)
                 .sourceId("slack-multi-source")
-                .userId("user-multi-source")
+                .userId(EMPLOYEE_MULTI_SOURCE)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
@@ -603,14 +654,12 @@ class LeaveIngestionIntegrationTest {
     void ingestOptionalHolidayShouldAcceptWhenDateExistsInDatabase() {
         LocalDate holidayDate = FIXED_DATE.plusDays(5);
 
-        // First, create an optional holiday via API
-        createOptionalHolidayViaApi(holidayDate, "Test Holiday", "Test holiday description");
-
+        // Optional holiday is already created in @BeforeTransaction
         // Now try to create an optional holiday leave for that date
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-optional-holiday-valid")
-                .userId("user-optional-holiday-valid")
+                .userId(EMPLOYEE_OPTIONAL_VALID)
                 .dateRange(DateRange.builder()
                         .startDate(holidayDate)
                         .endDate(holidayDate) // Single day
@@ -636,7 +685,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-optional-holiday-invalid")
-                .userId("user-optional-holiday-invalid")
+                .userId(EMPLOYEE_OPTIONAL_INVALID)
                 .dateRange(DateRange.builder()
                         .startDate(nonExistentDate)
                         .endDate(nonExistentDate) // Single day
@@ -658,15 +707,12 @@ class LeaveIngestionIntegrationTest {
         LocalDate startDate = FIXED_DATE.plusDays(5);
         LocalDate endDate = FIXED_DATE.plusDays(7);
 
-        // Create optional holidays for both dates via API
-        createOptionalHolidayViaApi(startDate, "Test Holiday 1", "Description 1");
-        createOptionalHolidayViaApi(endDate, "Test Holiday 2", "Description 2");
-
+        // Optional holidays are already created in @BeforeTransaction
         // Try to create a multi-day optional holiday leave
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-optional-holiday-multi-day")
-                .userId("user-optional-holiday-multi-day")
+                .userId(EMPLOYEE_OPTIONAL_MULTI)
                 .dateRange(DateRange.builder()
                         .startDate(startDate)
                         .endDate(endDate) // Multi-day
@@ -691,7 +737,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-annual-leave-no-holiday")
-                .userId("user-annual-leave-no-holiday")
+                .userId(EMPLOYEE_ANNUAL_NO_HOLIDAY)
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
