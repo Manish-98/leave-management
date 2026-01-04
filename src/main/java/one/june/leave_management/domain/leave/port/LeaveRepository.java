@@ -41,4 +41,12 @@ public interface LeaveRepository {
      * @return page of leaves matching the filter criteria
      */
     Page<Leave> findByFilters(LeaveFilters filters, Pageable pageable);
+
+    /**
+     * Count approved optional holiday leaves for a specific user in a given year.
+     * @param userId the user ID
+     * @param year the year to check
+     * @return count of approved optional holiday leaves
+     */
+    long countApprovedOptionalHolidaysByUserAndYear(String userId, int year);
 }

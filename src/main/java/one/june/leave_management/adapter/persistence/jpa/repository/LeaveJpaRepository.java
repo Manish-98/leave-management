@@ -70,4 +70,17 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
             @Param("quarterStart") java.time.LocalDate quarterStart,
             @Param("quarterEnd") java.time.LocalDate quarterEnd,
             Pageable pageable);
+
+    /**
+     * Count approved optional holiday leaves for a specific user in a given year.
+     * Uses date range overlap logic to count leaves that fall within the given year.
+     */
+    @Query("SELECT COUNT(l) FROM LeaveJpaEntity l WHERE l.userId = :userId " +
+           "AND l.type = 'OPTIONAL_HOLIDAY' " +
+           "AND l.status = 'APPROVED' " +
+           "AND l.startDate <= :yearEnd AND l.endDate >= :yearStart")
+    long countApprovedOptionalHolidaysByUserAndYear(
+            @Param("userId") String userId,
+            @Param("yearStart") java.time.LocalDate yearStart,
+            @Param("yearEnd") java.time.LocalDate yearEnd);
 }

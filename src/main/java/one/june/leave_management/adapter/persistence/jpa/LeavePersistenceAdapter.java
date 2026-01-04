@@ -169,4 +169,15 @@ public class LeavePersistenceAdapter implements LeaveRepository {
 
         return jpaPage.map(leaveMapper::toDomainEntity);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countApprovedOptionalHolidaysByUserAndYear(String userId, int year) {
+        logger.debug("Counting approved optional holidays for user {} in year {}", userId, year);
+
+        java.time.LocalDate yearStart = java.time.LocalDate.of(year, 1, 1);
+        java.time.LocalDate yearEnd = java.time.LocalDate.of(year, 12, 31);
+
+        return leaveJpaRepository.countApprovedOptionalHolidaysByUserAndYear(userId, yearStart, yearEnd);
+    }
 }
