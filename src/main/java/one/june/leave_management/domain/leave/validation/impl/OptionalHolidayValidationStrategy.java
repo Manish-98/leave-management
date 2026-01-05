@@ -1,6 +1,7 @@
 package one.june.leave_management.domain.leave.validation.impl;
 
 import one.june.leave_management.config.LeaveProperties;
+import one.june.leave_management.domain.employee.model.Employee;
 import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import one.june.leave_management.domain.leave.model.Leave;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
@@ -17,6 +18,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -86,8 +89,65 @@ public class OptionalHolidayValidationStrategy extends LeaveValidationStrategyBa
     }
 
     /**
+     * Calculates the maximum allowed optional holidays for an employee based on their date of joining.
+     * Proration rules:
+     * - Employees who joined in previous years get full configured max
+     * - Employees who joined in current year Jan-Jun get full configured max
+     * - Employees who joined in current year Jul-Dec get prorated amount (ceil of configured max / 2)
+     *
+     * @param leave the leave request
+     * @return the maximum allowed optional holidays for this employee
+     */
+    private int calculateMaxAllowedForEmployee(Leave leave) {
+        logger.debug("Calculating max allowed optional holidays for user: {}", leave.getUserId());
+
+        try {
+            UUID employeeId = UUID.fromString(leave.getUserId());
+            Optional<Employee> employeeOpt = employeeRepository.findById(employeeId);
+
+            if (employeeOpt.isEmpty()) {
+                logger.warn("Employee not found with ID: {}, falling back to configured max",
+                           leave.getUserId());
+                return leaveProperties.getMaxOptionalHolidaysPerYear();
+            }
+
+            Employee employee = employeeOpt.get();
+            LocalDate dateOfJoining = employee.getDateOfJoining();
+            LocalDate leaveDate = leave.getStartDate();
+            int configuredMax = leaveProperties.getMaxOptionalHolidaysPerYear();
+
+            // If employee joined in a previous year, they get full max
+            if (dateOfJoining.getYear() < leaveDate.getYear()) {
+                logger.debug("Employee joined in previous year {}, full max allowed: {}",
+                           dateOfJoining.getYear(), configuredMax);
+                return configuredMax;
+            }
+
+            // Employee joined in current year - check which half
+            int joiningMonth = dateOfJoining.getMonthValue();
+
+            if (joiningMonth <= 6) {
+                // Jan-Jun: full max
+                logger.debug("Employee joined in first half of current year (month {}), full max allowed: {}",
+                           joiningMonth, configuredMax);
+                return configuredMax;
+            } else {
+                // Jul-Dec: prorated (ceil of half)
+                int proratedMax = (int) Math.ceil(configuredMax / 2.0);
+                logger.debug("Employee joined in second half of current year (month {}), prorated max allowed: {}",
+                           joiningMonth, proratedMax);
+                return proratedMax;
+            }
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid user ID format: {}", leave.getUserId(), e);
+            return leaveProperties.getMaxOptionalHolidaysPerYear();
+        }
+    }
+
+    /**
      * Validates that the user has not exceeded the maximum allowed optional holidays per year.
      * Only applies to APPROVED leaves. For updates, excludes the current leave from the count.
+     * Uses employee-specific proration based on date of joining.
      *
      * @param leave the leave to validate
      * @return validation result
@@ -108,7 +168,7 @@ public class OptionalHolidayValidationStrategy extends LeaveValidationStrategyBa
         }
 
         int year = leaveDate.getYear();
-        int maxAllowed = leaveProperties.getMaxOptionalHolidaysPerYear();
+        int maxAllowedForThisEmployee = calculateMaxAllowedForEmployee(leave);
 
         // Count approved optional holidays for the user in this year
         long count = leaveRepository.countApprovedOptionalHolidaysByUserAndYear(leave.getUserId(), year);
@@ -122,25 +182,26 @@ public class OptionalHolidayValidationStrategy extends LeaveValidationStrategyBa
             // we need to subtract 1 if this leave was already approved
             logger.debug("This is an update - checking if current leave is already counted");
             // The current count includes this leave if it's already approved
-            // So we should allow if count <= maxAllowed
+            // So we should allow if count <= maxAllowedForThisEmployee
             // This means user is trying to update an existing approved leave
         } else {
             // This is a new leave - count should be strictly less than max
-            if (count >= maxAllowed) {
+            if (count >= maxAllowedForThisEmployee) {
                 String error = String.format(
-                        "User %s has already used %d optional holiday(s) for year %d. Maximum allowed is %d.",
+                        "User %s has already used %d optional holiday(s) for year %d. " +
+                        "Maximum allowed based on joining date is %d.",
                         leave.getUserId(),
                         count,
                         year,
-                        maxAllowed
+                        maxAllowedForThisEmployee
                 );
                 logger.warn(error);
                 return LeaveValidationResult.failure(error);
             }
         }
 
-        logger.debug("User {} has used {} optional holiday(s) for year {} (max: {})",
-                    leave.getUserId(), count, year, maxAllowed);
+        logger.debug("User {} has used {} optional holiday(s) for year {} (max for this employee: {})",
+                    leave.getUserId(), count, year, maxAllowedForThisEmployee);
 
         return LeaveValidationResult.success();
     }
