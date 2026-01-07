@@ -3,6 +3,7 @@ package one.june.leave_management.application.leave.service;
 import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackOption;
 import one.june.leave_management.application.leave.dto.OptionalHolidayDto;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import one.june.leave_management.domain.leave.port.OptionalHolidayRepository;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,21 @@ public class OptionalHolidayService {
         log.debug("Fetching all optional holidays");
 
         List<OptionalHoliday> holidays = optionalHolidayRepository.findAllByOrderByDateAsc();
+
+        return holidays.stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Get optional holidays by region ordered by date.
+     * @param region the region to filter by
+     * @return list of optional holiday DTOs for the specified region
+     */
+    public List<OptionalHolidayDto> getHolidaysByRegion(Region region) {
+        log.debug("Fetching optional holidays for region: {}", region);
+
+        List<OptionalHoliday> holidays = optionalHolidayRepository.findByRegionOrderByDateAsc(region);
 
         return holidays.stream()
                 .map(this::toDto)
@@ -120,6 +136,7 @@ public class OptionalHolidayService {
                 .date(updatedHoliday.getDate())
                 .name(updatedHoliday.getName())
                 .description(updatedHoliday.getDescription())
+                .region(updatedHoliday.getRegion())
                 .build();
 
         OptionalHoliday saved = optionalHolidayRepository.save(holidayWithId);
@@ -146,6 +163,7 @@ public class OptionalHolidayService {
                 .date(holiday.getDate())
                 .name(holiday.getName())
                 .description(holiday.getDescription())
+                .region(holiday.getRegion())
                 .build();
     }
 }

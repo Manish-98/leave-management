@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import one.june.leave_management.adapter.persistence.jpa.converter.CarryForwardLeavesConverter;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -51,6 +52,10 @@ public class EmployeeJpaEntity {
     @Column(name = "active", nullable = false)
     @Builder.Default
     private Boolean active = true;
+
+    @Column(name = "region", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Region region;
 
     @Column(name = "carry_forward_leaves", columnDefinition = "TEXT")
     @Convert(converter = CarryForwardLeavesConverter.class)

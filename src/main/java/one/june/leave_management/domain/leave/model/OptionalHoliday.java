@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -28,4 +29,5 @@ public class OptionalHoliday {
     private LocalDate date;
     private String name;
     private String description;
+    private Region region;
 }

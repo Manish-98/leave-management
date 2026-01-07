@@ -57,13 +57,13 @@ class AuditIntegrationTest {
         jdbcTemplate.update("DELETE FROM employee WHERE id IN (?, ?)", AUDIT_USER_1, AUDIT_USER_2);
 
         jdbcTemplate.update(
-                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
-                "VALUES (?, 'Audit User 1', 'U301', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                "VALUES (?, 'Audit User 1', 'U301', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 AUDIT_USER_1);
 
         jdbcTemplate.update(
-                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
-                "VALUES (?, 'Audit User 2', 'U302', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                "VALUES (?, 'Audit User 2', 'U302', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 AUDIT_USER_2);
 
         // Force commit

@@ -1,5 +1,6 @@
 package one.june.leave_management.domain.employee.model;
 
+import one.june.leave_management.domain.common.model.Region;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -52,7 +53,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertNotNull(employee);
@@ -73,7 +75,8 @@ class EmployeeTest {
                 null,
                 TEST_GOOGLE_ID,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertNotNull(employee);
@@ -94,7 +97,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 TEST_GOOGLE_ID,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertNotNull(employee);
@@ -109,38 +113,38 @@ class EmployeeTest {
     @Test
     void createFactoryMethodShouldThrowExceptionWhenNameIsNull() {
         assertThrows(IllegalArgumentException.class,
-                () -> Employee.create(null, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING));
+                () -> Employee.create(null, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
     }
 
     @Test
     void createFactoryMethodShouldThrowExceptionWhenNameIsEmpty() {
         assertThrows(IllegalArgumentException.class,
-                () -> Employee.create("  ", TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING));
+                () -> Employee.create("  ", TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
     }
 
     @Test
     void createFactoryMethodShouldThrowExceptionWhenDateOfJoiningIsNull() {
         assertThrows(IllegalArgumentException.class,
-                () -> Employee.create(TEST_NAME, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, null));
+                () -> Employee.create(TEST_NAME, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, null, Region.PUNE));
     }
 
     @Test
     void createFactoryMethodShouldThrowExceptionWhenNoExternalIdProvided() {
         assertThrows(IllegalArgumentException.class,
-                () -> Employee.create(TEST_NAME, null, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING));
+                () -> Employee.create(TEST_NAME, null, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
     }
 
     @Test
     void createFactoryMethodShouldThrowExceptionWhenBothExternalIdsAreEmpty() {
         assertThrows(IllegalArgumentException.class,
-                () -> Employee.create(TEST_NAME, "  ", "  ", TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING));
+                () -> Employee.create(TEST_NAME, "  ", "  ", TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
     }
 
     @Test
     void createFactoryMethodShouldThrowExceptionWhenDateOfJoiningIsInFuture() {
         assertThrows(IllegalArgumentException.class,
                 () -> Employee.create(TEST_NAME, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME,
-                        LocalDate.now().plusDays(1)));
+                        LocalDate.now().plusDays(1), Region.PUNE));
     }
 
     @Test
@@ -150,7 +154,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         LocalDate newDateOfJoining = LocalDate.of(2021, 3, 20);
@@ -159,7 +164,8 @@ class EmployeeTest {
                 null,
                 "jane.smith@example.com",
                 "Jane S",
-                newDateOfJoining
+                newDateOfJoining,
+                Region.PUNE
         );
 
         assertEquals("Jane Smith", employee.getName());
@@ -176,11 +182,12 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertThrows(IllegalArgumentException.class,
-                () -> employee.update(null, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING));
+                () -> employee.update(null, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
     }
 
     @Test
@@ -190,11 +197,12 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertThrows(IllegalArgumentException.class,
-                () -> employee.update(TEST_NAME, null, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING));
+                () -> employee.update(TEST_NAME, null, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
     }
 
     @Test
@@ -204,7 +212,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         employee.updateCarryForwardLeaves(2024, 5);
@@ -220,7 +229,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         employee.updateCarryForwardLeaves(2024, 5);
@@ -237,7 +247,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         employee.updateCarryForwardLeaves(2024, 5);
@@ -254,7 +265,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertThrows(IllegalArgumentException.class,
@@ -268,7 +280,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertThrows(IllegalArgumentException.class,
@@ -282,7 +295,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertThrows(IllegalArgumentException.class,
@@ -296,7 +310,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         employee.updateCarryForwardLeaves(2024, 5);
@@ -314,7 +329,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertThrows(IllegalArgumentException.class,
@@ -328,7 +344,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         employee.deactivate();
@@ -343,7 +360,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         employee.deactivate();
@@ -359,7 +377,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 null,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertTrue(employee.hasMatchingExternalId(TEST_SLACK_ID, null));
@@ -373,7 +392,8 @@ class EmployeeTest {
                 null,
                 TEST_GOOGLE_ID,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertTrue(employee.hasMatchingExternalId(null, TEST_GOOGLE_ID));
@@ -387,7 +407,8 @@ class EmployeeTest {
                 TEST_SLACK_ID,
                 TEST_GOOGLE_ID,
                 TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING
+                TEST_DATE_OF_JOINING,
+                Region.PUNE
         );
 
         assertFalse(employee.hasMatchingExternalId("U99999", "other@example.com"));

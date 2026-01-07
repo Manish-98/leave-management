@@ -2,6 +2,7 @@ package one.june.leave_management.domain.leave.validation.impl;
 
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.config.LeaveProperties;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.employee.model.Employee;
 import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import one.june.leave_management.domain.leave.model.Leave;
@@ -31,7 +32,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OptionalHolidayValidationStrategy - Max Optional Holidays Validation Tests")
@@ -57,9 +57,6 @@ class OptionalHolidayValidationStrategyTest {
 
     @BeforeEach
     void setUp() {
-        // Default max is 2 for most tests
-        lenient().when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
-
         strategy = new OptionalHolidayValidationStrategy(
                 employeeRepository,
                 leaveRepository,
@@ -78,8 +75,10 @@ class OptionalHolidayValidationStrategyTest {
         // Given
         Leave leave = createApprovedLeave(optionalHolidayDate);
 
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
         when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(optionalHolidayDate)));
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(optionalHolidayDate)));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(0L);
         when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
@@ -97,8 +96,10 @@ class OptionalHolidayValidationStrategyTest {
         // Given
         Leave leave = createApprovedLeave(futureOptionalHolidayDate);
 
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
         when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        when(optionalHolidayRepository.findAll()).thenReturn(
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(
                 List.of(
                         createOptionalHoliday(optionalHolidayDate),
                         createOptionalHoliday(futureOptionalHolidayDate)
@@ -122,8 +123,10 @@ class OptionalHolidayValidationStrategyTest {
         Leave existingLeave = createApprovedLeave(optionalHolidayDate);
         existingLeave.setId(UUID.randomUUID()); // Simulating an update
 
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
         when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(optionalHolidayDate)));
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(optionalHolidayDate)));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(2L);
         when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class), any(UUID.class))).thenReturn(List.of());
 
@@ -142,16 +145,16 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(futureOptionalHolidayDate);
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1)); // Previous year joiner
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(
                 List.of(
                         createOptionalHoliday(optionalHolidayDate),
                         createOptionalHoliday(futureOptionalHolidayDate)
                 )
         );
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(2L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -171,11 +174,11 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(futureOptionalHolidayDate);
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2023, 5, 10)); // Previous year joiner
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(3L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -194,11 +197,10 @@ class OptionalHolidayValidationStrategyTest {
         // Given
         Leave leave = createLeave(futureOptionalHolidayDate, LeaveStatus.REQUESTED);
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
-        // Simulate user already has 2 approved optional holidays
-        lenient().when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(2L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -214,11 +216,10 @@ class OptionalHolidayValidationStrategyTest {
         // Given
         Leave leave = createLeave(futureOptionalHolidayDate, LeaveStatus.CANCELLED);
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
-        // Simulate user already has 2 approved optional holidays
-        lenient().when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(2L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -234,8 +235,10 @@ class OptionalHolidayValidationStrategyTest {
         // Given
         Leave leave2024 = createApprovedLeaveForYear(LocalDate.of(2024, 12, 24));
 
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
         when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
         // User has 2 optional holidays in 2023, but 0 in 2024
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(0L);
         when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
@@ -254,8 +257,10 @@ class OptionalHolidayValidationStrategyTest {
         // Given
         Leave leapYearLeave = createApprovedLeaveForYear(LocalDate.of(2024, 2, 29)); // 2024 is a leap year
 
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
         when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 2, 29))));
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 2, 29))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(0L);
         when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
@@ -291,11 +296,12 @@ class OptionalHolidayValidationStrategyTest {
 
         Leave leave = createApprovedLeave(futureOptionalHolidayDate);
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(createEmployeeWithJoiningDate(LocalDate.of(2023, 1, 1))));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
         // User has 2 approved holidays, should be allowed to add a 3rd
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(2L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -320,12 +326,11 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(futureOptionalHolidayDate);
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2023, 3, 15)); // Previous year joiner
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
         // User has 1 approved holiday, should not be allowed to add a 2nd
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(1L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -353,11 +358,10 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(futureOptionalHolidayDate);
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2023, 2, 20)); // Previous year joiner
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(futureOptionalHolidayDate)));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(5L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -378,11 +382,12 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(LocalDate.of(2024, 6, 15));
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2023, 3, 15));
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 6, 15))));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 6, 15))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(1L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -399,11 +404,11 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(LocalDate.of(2024, 12, 24));
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2023, 5, 10));
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(2L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -423,11 +428,12 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(LocalDate.of(2024, 6, 15));
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2024, 1, 15));
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 6, 15))));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 6, 15))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(1L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -444,11 +450,12 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(LocalDate.of(2024, 8, 15));
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2024, 6, 30));
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 8, 15))));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 8, 15))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(0L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -465,11 +472,12 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(LocalDate.of(2024, 8, 15));
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2024, 7, 1));
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 8, 15))));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 8, 15))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(0L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -486,11 +494,11 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(LocalDate.of(2024, 12, 24));
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2024, 7, 15));
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(1L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -510,31 +518,12 @@ class OptionalHolidayValidationStrategyTest {
         Leave leave = createApprovedLeave(LocalDate.of(2024, 12, 24));
         Employee employee = createEmployeeWithJoiningDate(LocalDate.of(2024, 12, 1));
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
+        when(leaveProperties.getMaxOptionalHolidaysPerYear()).thenReturn(2);
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(0L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
-
-        // When
-        LeaveValidationResult result = strategy.validate(leave);
-
-        // Then
-        assertThat(result.isValid()).isTrue();
-        assertThat(result.getErrors()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should fall back to configured max when employee not found")
-    void shouldFallbackToConfiguredMaxWhenEmployeeNotFound() {
-        // Given
-        Leave leave = createApprovedLeave(LocalDate.of(2024, 6, 15));
-
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.empty());
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 6, 15))));
-        when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(1L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -560,11 +549,11 @@ class OptionalHolidayValidationStrategyTest {
                 leaveProperties
         );
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 8, 15))));
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 8, 15))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(1L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
+        when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -590,11 +579,10 @@ class OptionalHolidayValidationStrategyTest {
                 leaveProperties
         );
 
-        lenient().when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
-        lenient().when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
-        lenient().when(optionalHolidayRepository.findAll()).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
+        when(employeeRepository.existsById(validEmployeeId)).thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId)).thenReturn(Optional.of(employee));
+        when(optionalHolidayRepository.findByRegionOrderByDateAsc(Region.PUNE)).thenReturn(List.of(createOptionalHoliday(LocalDate.of(2024, 12, 24))));
         when(leaveRepository.countApprovedOptionalHolidaysByUserAndYear(anyString(), anyInt())).thenReturn(2L);
-        lenient().when(leaveRepository.findOverlappingLeaves(anyString(), any(DateRange.class))).thenReturn(List.of());
 
         // When
         LeaveValidationResult result = strategy.validate(leave);
@@ -652,6 +640,7 @@ class OptionalHolidayValidationStrategyTest {
         return OptionalHoliday.builder()
                 .date(date)
                 .name("Test Optional Holiday")
+                .region(Region.PUNE)
                 .build();
     }
 
@@ -661,6 +650,7 @@ class OptionalHolidayValidationStrategyTest {
                 .name("Test Employee")
                 .dateOfJoining(dateOfJoining)
                 .active(true)
+                .region(Region.PUNE)
                 .build();
     }
 }

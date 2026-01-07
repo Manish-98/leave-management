@@ -4,6 +4,7 @@ import one.june.leave_management.adapter.inbound.web.dto.CreateOptionalHolidayRe
 import one.june.leave_management.adapter.inbound.web.dto.UpdateOptionalHolidayRequest;
 import one.june.leave_management.application.leave.dto.OptionalHolidayDto;
 import one.june.leave_management.adapter.persistence.jpa.repository.OptionalHolidayJpaRepository;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.test.util.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -64,6 +65,7 @@ class OptionalHolidayControllerIntegrationTest {
                 .date(LocalDate.of(2024, 12, 25))
                 .name("Christmas Day")
                 .description("Christmas celebration")
+                .region(Region.PUNE)
                 .build();
 
         HttpEntity<CreateOptionalHolidayRequest> entity = new HttpEntity<>(request, headers);
@@ -184,6 +186,7 @@ class OptionalHolidayControllerIntegrationTest {
                 .date(LocalDate.of(2024, 7, 4))
                 .name("Independence Day (Updated)")
                 .description("Updated description")
+                .region(Region.PUNE)
                 .build();
 
         HttpEntity<UpdateOptionalHolidayRequest> entity = new HttpEntity<>(updateRequest, headers);
@@ -213,6 +216,7 @@ class OptionalHolidayControllerIntegrationTest {
                 .date(LocalDate.of(2024, 7, 4))
                 .name("Test Holiday")
                 .description("Test")
+                .region(Region.PUNE)
                 .build();
 
         HttpEntity<UpdateOptionalHolidayRequest> entity = new HttpEntity<>(updateRequest, headers);
@@ -286,6 +290,7 @@ class OptionalHolidayControllerIntegrationTest {
                 .date(LocalDate.of(2024, 12, 25))
                 // name is missing
                 .description("Christmas celebration")
+                .region(Region.PUNE)
                 .build();
 
         HttpEntity<CreateOptionalHolidayRequest> entity = new HttpEntity<>(request, headers);
@@ -352,6 +357,7 @@ class OptionalHolidayControllerIntegrationTest {
                 .date(date)
                 .name(name)
                 .description(description)
+                .region(Region.PUNE)
                 .build();
 
         HttpEntity<CreateOptionalHolidayRequest> entity = new HttpEntity<>(request, headers);

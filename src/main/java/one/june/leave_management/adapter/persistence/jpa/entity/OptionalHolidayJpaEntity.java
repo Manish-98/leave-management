@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -40,6 +41,10 @@ public class OptionalHolidayJpaEntity {
 
     @Column(name = "description", length = 500)
     private String description;
+
+    @Column(name = "region", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Region region;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

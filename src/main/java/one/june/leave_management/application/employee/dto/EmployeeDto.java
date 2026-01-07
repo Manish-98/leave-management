@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -43,6 +44,9 @@ public class EmployeeDto {
 
     @Schema(description = "Employee active status", example = "true")
     private Boolean active;
+
+    @Schema(description = "Employee region", example = "PUNE", required = true)
+    private Region region;
 
     @Schema(description = "Carry forward leaves by year (year -> days map)", example = "{\"2024\": 5, \"2025\": 3}")
     private Map<Integer, Integer> carryForwardLeaves;

@@ -60,7 +60,7 @@ public class OptionalHolidayValidationStrategy extends LeaveValidationStrategyBa
                 .validate(this::validateHalfDayConstraints)
                 .validate(this::validateApprovedLeaveConstraints)
                 .validate(l -> validateSingleDay(l.getStartDate(), l.getEndDate()))
-                .validate(l -> validateOptionalHolidayExists(l.getStartDate(), fetchOptionalHolidayDates()))
+                .validate(l -> validateOptionalHolidayExists(l.getStartDate(), fetchOptionalHolidayDates(l)))
                 .validate(l -> validateMaxOptionalHolidaysPerYear(l))
                 .validate(l -> validateNoOverlappingLeaves(l, fetchOverlappingLeaves(l)))
                 .getResult();
@@ -74,18 +74,42 @@ public class OptionalHolidayValidationStrategy extends LeaveValidationStrategyBa
     }
 
     /**
-     * Fetches all optional holiday dates from the repository.
+     * Fetches optional holiday dates filtered by the employee's region.
      *
-     * @return list of optional holiday dates
+     * @param leave the leave request containing the user ID
+     * @return list of optional holiday dates for the employee's region
      */
-    private List<LocalDate> fetchOptionalHolidayDates() {
-        logger.debug("Fetching all optional holiday dates");
-        List<OptionalHoliday> holidays = optionalHolidayRepository.findAll();
-        List<LocalDate> dates = holidays.stream()
-                .map(OptionalHoliday::getDate)
-                .collect(Collectors.toList());
-        logger.debug("Found {} optional holiday dates", dates.size());
-        return dates;
+    private List<LocalDate> fetchOptionalHolidayDates(Leave leave) {
+        logger.debug("Fetching optional holiday dates for user: {}", leave.getUserId());
+
+        try {
+            // Fetch employee to get their region
+            UUID employeeId = UUID.fromString(leave.getUserId());
+            var employeeOpt = employeeRepository.findById(employeeId);
+
+            if (employeeOpt.isEmpty()) {
+                logger.warn("Employee not found with ID: {}, returning empty holiday list",
+                           leave.getUserId());
+                return List.of();
+            }
+
+            var employee = employeeOpt.get();
+            var employeeRegion = employee.getRegion();
+
+            logger.debug("Employee region: {}", employeeRegion);
+
+            // Fetch holidays for the employee's region
+            List<OptionalHoliday> holidays = optionalHolidayRepository.findByRegionOrderByDateAsc(employeeRegion);
+            List<LocalDate> dates = holidays.stream()
+                    .map(OptionalHoliday::getDate)
+                    .collect(Collectors.toList());
+
+            logger.debug("Found {} optional holiday dates for region: {}", dates.size(), employeeRegion);
+            return dates;
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid user ID format: {}", leave.getUserId(), e);
+            return List.of();
+        }
     }
 
     /**

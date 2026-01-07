@@ -2,6 +2,7 @@ package one.june.leave_management.integration;
 
 import one.june.leave_management.application.employee.dto.EmployeeDto;
 import one.june.leave_management.application.employee.service.EmployeeService;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.test.builder.EmployeeTestDataBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,7 +54,8 @@ class EmployeeIntegrationTest {
                 testEmployee.getSlackDisplayName(),
                 testEmployee.getDateOfJoining(),
                 testEmployee.getActive(),
-                testEmployee.getCarryForwardLeaves()
+                testEmployee.getCarryForwardLeaves(),
+                Region.PUNE
         );
 
         EmployeeDto created = employeeService.create(toCommand(createRequest));
@@ -73,7 +75,8 @@ class EmployeeIntegrationTest {
                 found.getSlackDisplayName(),
                 found.getDateOfJoining(),
                 found.getActive(),
-                found.getCarryForwardLeaves()
+                found.getCarryForwardLeaves(),
+                Region.PUNE
         );
 
         EmployeeDto updated = employeeService.update(created.getId(), toCommand(updateRequest));
@@ -101,7 +104,8 @@ class EmployeeIntegrationTest {
                 "BulkEmployee",
                 java.time.LocalDate.of(2024, 1, 1),
                 true,
-                carryForwardLeaves
+                carryForwardLeaves,
+                Region.PUNE
         );
 
         // When - Create employee via service
@@ -135,7 +139,8 @@ class EmployeeIntegrationTest {
                     "SearchEmployee" + i,
                     java.time.LocalDate.of(2020, 1, 1),
                     true,
-                    new HashMap<>()
+                    new HashMap<>(),
+                    Region.PUNE
             );
 
             employeeService.create(toCommand(request));
@@ -165,7 +170,8 @@ class EmployeeIntegrationTest {
                 "DupUser",
                 java.time.LocalDate.of(2024, 1, 1),
                 true,
-                new HashMap<>()
+                new HashMap<>(),
+                Region.PUNE
         );
 
         EmployeeDto created = employeeService.create(toCommand(request1));
@@ -178,7 +184,8 @@ class EmployeeIntegrationTest {
                 "AnotherUser",
                 java.time.LocalDate.of(2024, 1, 1),
                 true,
-                new HashMap<>()
+                new HashMap<>(),
+                Region.PUNE
         );
 
         assertThatThrownBy(() -> employeeService.create(toCommand(request2)))
@@ -199,7 +206,8 @@ class EmployeeIntegrationTest {
                 "ActiveUser",
                 java.time.LocalDate.of(2024, 1, 1),
                 true,
-                carryForwardLeaves
+                carryForwardLeaves,
+                Region.PUNE
         );
 
         EmployeeDto created = employeeService.create(toCommand(request));
@@ -232,6 +240,7 @@ class EmployeeIntegrationTest {
                 .slackDisplayName(request.slackDisplayName())
                 .dateOfJoining(request.dateOfJoining())
                 .active(request.active())
+                .region(request.region())
                 .carryForwardLeaves(request.carryForwardLeaves())
                 .build();
     }
@@ -245,7 +254,8 @@ class EmployeeIntegrationTest {
             String slackDisplayName,
             java.time.LocalDate dateOfJoining,
             Boolean active,
-            java.util.Map<Integer, Integer> carryForwardLeaves
+            java.util.Map<Integer, Integer> carryForwardLeaves,
+            Region region
     ) {
     }
 }

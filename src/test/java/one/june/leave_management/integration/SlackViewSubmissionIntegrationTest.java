@@ -75,8 +75,8 @@ class SlackViewSubmissionIntegrationTest {
         for (String slackId : slackIds) {
             String baseUuid = "123e4567-e89b-12d3-a456-426614174" + String.format("%03d", i);
             String employeeSql = String.format(
-                    "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
-                    "VALUES (?, 'Test User %d', '%s', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                    "VALUES (?, 'Test User %d', '%s', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                     i, slackId);
             jdbcTemplate.update(employeeSql, baseUuid);
             i++;
@@ -88,8 +88,8 @@ class SlackViewSubmissionIntegrationTest {
         // Create optional holiday needed for test on 2024-01-01
         String holidayId = java.util.UUID.randomUUID().toString();
         jdbcTemplate.update(
-                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
-                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO optional_holidays (id, date, name, description, region, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 holidayId, LocalDate.of(2024, Month.JANUARY, 1), "New Year's Day", "First day of the year"
         );
 

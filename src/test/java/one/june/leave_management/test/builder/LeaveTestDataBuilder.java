@@ -1,6 +1,7 @@
 package one.june.leave_management.test.builder;
 
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.leave.model.BulkUploadJob;
 import one.june.leave_management.domain.leave.model.BulkUploadRecord;
 import one.june.leave_management.adapter.persistence.jpa.entity.OptionalHolidayJpaEntity;
@@ -154,7 +155,8 @@ public class LeaveTestDataBuilder {
                 .id(UUID.randomUUID())
                 .date(LocalDate.of(2024, 1, 1))
                 .name("Test Holiday")
-                .description("Test holiday description");
+                .description("Test holiday description")
+                .region(Region.PUNE);
     }
 
     /**
@@ -165,7 +167,8 @@ public class LeaveTestDataBuilder {
                 .id(UUID.randomUUID())
                 .date(date)
                 .name(name)
-                .description(name + " description");
+                .description(name + " description")
+                .region(Region.PUNE);
     }
 
     /**

@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -27,5 +28,6 @@ public class EmployeeCreateCommand {
     private String slackDisplayName;
     private LocalDate dateOfJoining;
     private Boolean active;
+    private Region region;
     private Map<Integer, Integer> carryForwardLeaves;
 }

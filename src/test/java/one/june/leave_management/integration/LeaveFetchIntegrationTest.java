@@ -71,13 +71,13 @@ class LeaveFetchIntegrationTest {
         jdbcTemplate.update("DELETE FROM employee WHERE id IN (?, ?)", USER1_ID, USER2_ID);
 
         jdbcTemplate.update(
-                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
-                "VALUES (?, 'User 1', 'U201', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                "VALUES (?, 'User 1', 'U201', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 USER1_ID);
 
         jdbcTemplate.update(
-                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
-                "VALUES (?, 'User 2', 'U202', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                "VALUES (?, 'User 2', 'U202', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 USER2_ID);
 
         // Create leaves with different users, years, and quarters

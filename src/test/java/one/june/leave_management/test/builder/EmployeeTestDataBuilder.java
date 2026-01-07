@@ -2,6 +2,7 @@ package one.june.leave_management.test.builder;
 
 import one.june.leave_management.application.employee.command.EmployeeCreateCommand;
 import one.june.leave_management.application.employee.dto.EmployeeDto;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.employee.model.Employee;
 
 import java.time.LocalDate;
@@ -28,6 +29,7 @@ public class EmployeeTestDataBuilder {
                 .slackDisplayName("John")
                 .dateOfJoining(LocalDate.of(2020, 1, 1))
                 .active(true)
+                .region(Region.PUNE)
                 .carryForwardLeaves(new HashMap<>())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now());
@@ -119,6 +121,7 @@ public class EmployeeTestDataBuilder {
                 .slackDisplayName("John")
                 .dateOfJoining(LocalDate.of(2020, 1, 1))
                 .active(true)
+                .region(Region.PUNE)
                 .carryForwardLeaves(new HashMap<>());
     }
 
@@ -178,6 +181,7 @@ public class EmployeeTestDataBuilder {
                 .slackDisplayName("John")
                 .dateOfJoining(LocalDate.of(2020, 1, 1))
                 .active(true)
+                .region(Region.PUNE)
                 .carryForwardLeaves(new HashMap<>());
     }
 
@@ -190,7 +194,8 @@ public class EmployeeTestDataBuilder {
                 "U67890",
                 null,
                 "Jane",
-                LocalDate.of(2021, 6, 15)
+                LocalDate.of(2021, 6, 15),
+                Region.PUNE
         );
     }
 
@@ -203,7 +208,8 @@ public class EmployeeTestDataBuilder {
                 null,
                 "jane.smith@example.com",
                 "Jane",
-                LocalDate.of(2021, 6, 15)
+                LocalDate.of(2021, 6, 15),
+                Region.PUNE
         );
     }
 
@@ -221,7 +227,8 @@ public class EmployeeTestDataBuilder {
                 "U11111",
                 "bob@example.com",
                 "Bob",
-                LocalDate.of(2019, 3, 10)
+                LocalDate.of(2019, 3, 10),
+                Region.PUNE
         );
         employee.setCarryForwardLeaves(leaves);
         return employee;

@@ -10,6 +10,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -71,6 +72,14 @@ public class EmployeeCreateRequest {
             example = "true"
     )
     private Boolean active;
+
+    @Schema(
+            description = "Employee region",
+            example = "PUNE",
+            required = true
+    )
+    @NotNull(message = "Region is required")
+    private Region region;
 
     @Schema(
             description = "Carry forward leaves by year (year -> days map)",

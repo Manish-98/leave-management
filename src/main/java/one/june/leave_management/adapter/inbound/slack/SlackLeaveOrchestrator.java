@@ -428,7 +428,7 @@ public class SlackLeaveOrchestrator {
      * <p>
      * This method builds a modal with form fields for leave application
      * and opens it in Slack using the trigger_id from the slash command.
-     * It runs asynchronously to avoid blocking the HTTP response.
+     * It runs asynchronously to avoid blocking the HTTP response../
      * <p>
      * The async nature is important because:
      * - Slack requires a response within 3 seconds

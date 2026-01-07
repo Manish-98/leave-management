@@ -1,5 +1,6 @@
 package one.june.leave_management.domain.leave.port;
 
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.leave.model.OptionalHoliday;
 
 import java.util.List;
@@ -14,6 +15,8 @@ public interface OptionalHolidayRepository {
     OptionalHoliday save(OptionalHoliday holiday);
     List<OptionalHoliday> findAll();
     List<OptionalHoliday> findAllByOrderByDateAsc();
+    List<OptionalHoliday> findByRegion(Region region);
+    List<OptionalHoliday> findByRegionOrderByDateAsc(Region region);
     Optional<OptionalHoliday> findById(UUID id);
     Optional<OptionalHoliday> findByDate(java.time.LocalDate date);
     void deleteById(UUID id);

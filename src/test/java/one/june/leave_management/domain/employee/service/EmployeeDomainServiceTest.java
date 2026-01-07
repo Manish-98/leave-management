@@ -9,6 +9,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import one.june.leave_management.common.exception.DuplicateExternalIdException;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.employee.model.Employee;
 import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import one.june.leave_management.test.builder.EmployeeTestDataBuilder;
@@ -172,7 +173,8 @@ class EmployeeDomainServiceTest {
             null,
             "test@example.com",
             "Test",
-            java.time.LocalDate.of(2020, 1, 1)
+            java.time.LocalDate.of(2020, 1, 1),
+            Region.PUNE
         );
         when(employeeRepository.existsByGoogleId("test@example.com")).thenReturn(false);
 
@@ -194,7 +196,8 @@ class EmployeeDomainServiceTest {
             "",
             "test@example.com",
             "Test",
-            java.time.LocalDate.of(2020, 1, 1)
+            java.time.LocalDate.of(2020, 1, 1),
+            Region.PUNE
         );
         when(employeeRepository.existsByGoogleId("test@example.com")).thenReturn(false);
 
@@ -215,7 +218,8 @@ class EmployeeDomainServiceTest {
             "U12345",
             null,
             "Test",
-            java.time.LocalDate.of(2020, 1, 1)
+            java.time.LocalDate.of(2020, 1, 1),
+            Region.PUNE
         );
         when(employeeRepository.existsBySlackId("U12345")).thenReturn(false);
 
@@ -237,7 +241,8 @@ class EmployeeDomainServiceTest {
             "U12345",
             "",
             "Test",
-            java.time.LocalDate.of(2020, 1, 1)
+            java.time.LocalDate.of(2020, 1, 1),
+            Region.PUNE
         );
         when(employeeRepository.existsBySlackId("U12345")).thenReturn(false);
 

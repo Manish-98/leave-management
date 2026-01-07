@@ -4,6 +4,7 @@ import one.june.leave_management.adapter.inbound.web.dto.CreateOptionalHolidayRe
 import one.june.leave_management.adapter.inbound.web.dto.UpdateOptionalHolidayRequest;
 import one.june.leave_management.application.leave.dto.OptionalHolidayDto;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -206,10 +207,10 @@ class OptionalHolidayControllerTest {
 
             List<OptionalHolidayDto> expectedHolidays = List.of(holiday1, holiday2, holiday3);
 
-            when(optionalHolidayService.getAllHolidays()).thenReturn(expectedHolidays);
+            when(optionalHolidayService.getHolidaysByRegion(Region.PUNE)).thenReturn(expectedHolidays);
 
             // When
-            ResponseEntity<List<OptionalHolidayDto>> response = controller.getAllHolidays();
+            ResponseEntity<List<OptionalHolidayDto>> response = controller.getAllHolidays(Region.PUNE);
 
             // Then
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -217,24 +218,24 @@ class OptionalHolidayControllerTest {
             assertThat(response.getBody()).hasSize(3);
             assertThat(response.getBody()).containsExactly(holiday1, holiday2, holiday3);
 
-            verify(optionalHolidayService).getAllHolidays();
+            verify(optionalHolidayService).getHolidaysByRegion(Region.PUNE);
         }
 
         @Test
         @DisplayName("Should return empty list when no holidays exist")
         void shouldReturnEmptyListWhenNoHolidaysExist() {
             // Given
-            when(optionalHolidayService.getAllHolidays()).thenReturn(List.of());
+            when(optionalHolidayService.getHolidaysByRegion(Region.PUNE)).thenReturn(List.of());
 
             // When
-            ResponseEntity<List<OptionalHolidayDto>> response = controller.getAllHolidays();
+            ResponseEntity<List<OptionalHolidayDto>> response = controller.getAllHolidays(Region.PUNE);
 
             // Then
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody()).isEmpty();
 
-            verify(optionalHolidayService).getAllHolidays();
+            verify(optionalHolidayService).getHolidaysByRegion(Region.PUNE);
         }
 
         @Test
@@ -247,10 +248,10 @@ class OptionalHolidayControllerTest {
                     .name("Labor Day")
                     .build();
 
-            when(optionalHolidayService.getAllHolidays()).thenReturn(List.of(holiday));
+            when(optionalHolidayService.getHolidaysByRegion(Region.PUNE)).thenReturn(List.of(holiday));
 
             // When
-            ResponseEntity<List<OptionalHolidayDto>> response = controller.getAllHolidays();
+            ResponseEntity<List<OptionalHolidayDto>> response = controller.getAllHolidays(Region.PUNE);
 
             // Then
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);

@@ -2,6 +2,7 @@ package one.june.leave_management.adapter.persistence.jpa;
 
 import one.june.leave_management.adapter.persistence.jpa.entity.OptionalHolidayJpaEntity;
 import one.june.leave_management.adapter.persistence.jpa.repository.OptionalHolidayJpaRepository;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import one.june.leave_management.domain.leave.port.OptionalHolidayRepository;
 import org.springframework.stereotype.Component;
@@ -66,6 +67,20 @@ public class OptionalHolidayPersistenceAdapter implements OptionalHolidayReposit
         return jpaRepository.existsById(id);
     }
 
+    @Override
+    public List<OptionalHoliday> findByRegion(Region region) {
+        return jpaRepository.findByRegion(region).stream()
+                .map(this::toDomainEntity)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<OptionalHoliday> findByRegionOrderByDateAsc(Region region) {
+        return jpaRepository.findByRegionOrderByDateAsc(region).stream()
+                .map(this::toDomainEntity)
+                .collect(Collectors.toList());
+    }
+
     // Mapper methods
     private OptionalHoliday toDomainEntity(OptionalHolidayJpaEntity jpaEntity) {
         return OptionalHoliday.builder()
@@ -73,6 +88,7 @@ public class OptionalHolidayPersistenceAdapter implements OptionalHolidayReposit
                 .date(jpaEntity.getDate())
                 .name(jpaEntity.getName())
                 .description(jpaEntity.getDescription())
+                .region(jpaEntity.getRegion())
                 .build();
     }
 
@@ -82,6 +98,7 @@ public class OptionalHolidayPersistenceAdapter implements OptionalHolidayReposit
                 .date(domainEntity.getDate())
                 .name(domainEntity.getName())
                 .description(domainEntity.getDescription())
+                .region(domainEntity.getRegion())
                 .build();
     }
 }

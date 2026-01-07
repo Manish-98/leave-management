@@ -12,6 +12,7 @@ import one.june.leave_management.adapter.inbound.web.dto.CreateOptionalHolidayRe
 import one.june.leave_management.adapter.inbound.web.dto.UpdateOptionalHolidayRequest;
 import one.june.leave_management.application.leave.dto.OptionalHolidayDto;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -78,6 +80,7 @@ public class OptionalHolidayController {
                 .date(request.getDate())
                 .name(request.getName())
                 .description(request.getDescription())
+                .region(request.getRegion())
                 .build();
 
         OptionalHolidayDto result = optionalHolidayService.createHoliday(holiday);
@@ -90,7 +93,8 @@ public class OptionalHolidayController {
     @Operation(
             summary = "Get all optional holidays",
             description = "Retrieves all optional holidays ordered by date ascending. " +
-                    "Returns a list of all holidays in the system.",
+                    "Can be filtered by region using the 'region' query parameter. " +
+                    "Returns a list of all holidays or holidays for a specific region.",
             tags = {"Optional Holiday Management"}
     )
     @ApiResponses({
@@ -104,10 +108,18 @@ public class OptionalHolidayController {
                     description = "Internal server error"
             )
     })
-    public ResponseEntity<List<OptionalHolidayDto>> getAllHolidays() {
-        logger.info("Fetching all optional holidays");
+    public ResponseEntity<List<OptionalHolidayDto>> getAllHolidays(
+            @Parameter(
+                    description = "Filter holidays by region (optional)",
+                    example = "PUNE",
+                    required = false
+            )
+            @RequestParam(required = false) Region region) {
+        logger.info("Fetching optional holidays with region filter: {}", region);
 
-        List<OptionalHolidayDto> result = optionalHolidayService.getAllHolidays();
+        List<OptionalHolidayDto> result = region != null
+                ? optionalHolidayService.getHolidaysByRegion(region)
+                : optionalHolidayService.getAllHolidays();
 
         logger.info("Successfully fetched {} optional holidays", result.size());
         return ResponseEntity.ok(result);
@@ -196,6 +208,7 @@ public class OptionalHolidayController {
                 .date(request.getDate())
                 .name(request.getName())
                 .description(request.getDescription())
+                .region(request.getRegion())
                 .build();
 
         OptionalHolidayDto result = optionalHolidayService.updateHoliday(id, holiday);

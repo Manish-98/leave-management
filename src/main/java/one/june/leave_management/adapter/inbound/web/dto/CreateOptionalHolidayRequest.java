@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 
@@ -30,4 +31,7 @@ public class CreateOptionalHolidayRequest {
 
     @Size(max = 500, message = "Description must not exceed 500 characters")
     private String description;
+
+    @NotNull(message = "Region is required")
+    private Region region;
 }

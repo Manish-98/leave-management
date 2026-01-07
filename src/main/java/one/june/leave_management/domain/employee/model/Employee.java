@@ -6,6 +6,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import one.june.leave_management.domain.common.model.Region;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -29,6 +30,7 @@ public class Employee {
     private LocalDate dateOfJoining;
     @Builder.Default
     private Boolean active = true;
+    private Region region;
     @Builder.Default
     private Map<Integer, Integer> carryForwardLeaves = new HashMap<>();
     private LocalDateTime createdAt;
@@ -42,15 +44,19 @@ public class Employee {
      * @param googleId       Google ID (optional)
      * @param slackDisplayName Slack display name (optional)
      * @param dateOfJoining  Date of joining (required)
+     * @param region         Employee's region (required)
      * @return Created and validated Employee instance
      */
     public static Employee create(String name, String slackId, String googleId,
-                                  String slackDisplayName, LocalDate dateOfJoining) {
+                                  String slackDisplayName, LocalDate dateOfJoining, Region region) {
         if (name == null) {
             throw new IllegalArgumentException("name cannot be null");
         }
         if (dateOfJoining == null) {
             throw new IllegalArgumentException("dateOfJoining cannot be null");
+        }
+        if (region == null) {
+            throw new IllegalArgumentException("region cannot be null");
         }
 
         // At least one external ID is required
@@ -66,6 +72,7 @@ public class Employee {
                 .slackDisplayName(slackDisplayName != null ? slackDisplayName.trim() : null)
                 .dateOfJoining(dateOfJoining)
                 .active(true)
+                .region(region)
                 .carryForwardLeaves(new HashMap<>())
                 .build();
 
@@ -81,14 +88,18 @@ public class Employee {
      * @param googleId       New google ID
      * @param slackDisplayName New slack display name
      * @param dateOfJoining  New date of joining
+     * @param region         New region
      */
     public void update(String name, String slackId, String googleId,
-                      String slackDisplayName, LocalDate dateOfJoining) {
+                      String slackDisplayName, LocalDate dateOfJoining, Region region) {
         if (name == null) {
             throw new IllegalArgumentException("name cannot be null");
         }
         if (dateOfJoining == null) {
             throw new IllegalArgumentException("dateOfJoining cannot be null");
+        }
+        if (region == null) {
+            throw new IllegalArgumentException("region cannot be null");
         }
 
         this.name = name.trim();
@@ -103,6 +114,7 @@ public class Employee {
         this.googleId = googleId != null ? googleId.trim() : null;
         this.slackDisplayName = slackDisplayName != null ? slackDisplayName.trim() : null;
         this.dateOfJoining = dateOfJoining;
+        this.region = region;
 
         validate();
     }
@@ -198,6 +210,11 @@ public class Employee {
 
         if (dateOfJoining.isAfter(LocalDate.now())) {
             throw new IllegalArgumentException("dateOfJoining cannot be in the future");
+        }
+
+        // Region validation
+        if (region == null) {
+            throw new IllegalArgumentException("region cannot be null");
         }
 
         // Carry forward leaves validation

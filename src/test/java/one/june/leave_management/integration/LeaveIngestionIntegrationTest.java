@@ -105,8 +105,8 @@ class LeaveIngestionIntegrationTest {
         int i = 1;
         for (String employeeId : employeeIds) {
             jdbcTemplate.update(
-                    "INSERT INTO employee (id, name, slack_id, date_of_joining, active, created_at, updated_at) " +
-                    "VALUES (?, 'Test User " + i + "', 'U" + String.format("%03d", i) + "', '2020-01-01', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                    "VALUES (?, 'Test User " + i + "', 'U" + String.format("%03d", i) + "', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                     employeeId);
             i++;
         }
@@ -117,22 +117,22 @@ class LeaveIngestionIntegrationTest {
         // Create optional holidays needed for tests
         // Holiday on 2024-06-26 (FIXED_DATE.plusDays(11)) for LeaveType enum test
         jdbcTemplate.update(
-                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
-                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO optional_holidays (id, date, name, description, region, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 UUID.randomUUID(), FIXED_DATE.plusDays(11), "Test Holiday for All Types", "Auto-generated for LeaveType enum test"
         );
 
         // Holiday on 2024-06-20 (FIXED_DATE.plusDays(5)) for validation tests
         jdbcTemplate.update(
-                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
-                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO optional_holidays (id, date, name, description, region, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 UUID.randomUUID(), FIXED_DATE.plusDays(5), "Test Holiday", "Test holiday description"
         );
 
         // Holiday on 2024-06-22 (FIXED_DATE.plusDays(7)) for multi-day validation test
         jdbcTemplate.update(
-                "INSERT INTO optional_holidays (id, date, name, description, created_at, updated_at) " +
-                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "INSERT INTO optional_holidays (id, date, name, description, region, created_at, updated_at) " +
+                "VALUES (?, ?, ?, ?, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 UUID.randomUUID(), FIXED_DATE.plusDays(7), "Test Holiday 2", "Description 2"
         );
     }

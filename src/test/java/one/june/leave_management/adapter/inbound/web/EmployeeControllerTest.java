@@ -8,6 +8,7 @@ import one.june.leave_management.application.employee.service.EmployeeService;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.common.exception.DuplicateExternalIdException;
 import one.june.leave_management.common.exception.EmployeeNotFoundException;
+import one.june.leave_management.domain.common.model.Region;
 import one.june.leave_management.test.builder.EmployeeTestDataBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -81,6 +82,7 @@ class EmployeeControllerTest {
                     testEmployeeDto.getSlackDisplayName(),
                     testEmployeeDto.getDateOfJoining(),
                     testEmployeeDto.getActive(),
+                    Region.PUNE,
                     testEmployeeDto.getCarryForwardLeaves()
             );
 
@@ -109,6 +111,7 @@ class EmployeeControllerTest {
                     "Test",
                     java.time.LocalDate.of(2020, 1, 1),
                     true,
+                    Region.PUNE,
                     new HashMap<>()
             );
 
@@ -134,6 +137,7 @@ class EmployeeControllerTest {
                     "Test",
                     java.time.LocalDate.of(2020, 1, 1),
                     true,
+                    Region.PUNE,
                     new HashMap<>()
             );
 
@@ -346,6 +350,7 @@ class EmployeeControllerTest {
                     testEmployeeDto.getSlackDisplayName(),
                     testEmployeeDto.getDateOfJoining(),
                     testEmployeeDto.getActive(),
+                    Region.PUNE,
                     testEmployeeDto.getCarryForwardLeaves()
             );
 
@@ -374,6 +379,7 @@ class EmployeeControllerTest {
                     "Test",
                     java.time.LocalDate.of(2020, 1, 1),
                     true,
+                    Region.PUNE,
                     new HashMap<>()
             );
 
@@ -398,6 +404,7 @@ class EmployeeControllerTest {
                     "Test",
                     java.time.LocalDate.of(2020, 1, 1),
                     true,
+                    Region.PUNE,
                     new HashMap<>()
             );
 

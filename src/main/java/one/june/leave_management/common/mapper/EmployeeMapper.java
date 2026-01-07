@@ -30,6 +30,7 @@ public class EmployeeMapper {
                 .slackDisplayName(employee.getSlackDisplayName())
                 .dateOfJoining(employee.getDateOfJoining())
                 .active(employee.isActive())
+                .region(employee.getRegion())
                 .carryForwardLeaves(employee.getCarryForwardLeaves())
                 .createdAt(employee.getCreatedAt())
                 .updatedAt(employee.getUpdatedAt())
@@ -52,6 +53,7 @@ public class EmployeeMapper {
                 .slackDisplayName(jpaEntity.getSlackDisplayName())
                 .dateOfJoining(jpaEntity.getDateOfJoining())
                 .active(jpaEntity.getActive())
+                .region(jpaEntity.getRegion())
                 .carryForwardLeaves(jpaEntity.getCarryForwardLeaves())
                 .createdAt(jpaEntity.getCreatedAt())
                 .updatedAt(jpaEntity.getUpdatedAt())
@@ -76,6 +78,7 @@ public class EmployeeMapper {
                 .slackDisplayName(employee.getSlackDisplayName())
                 .dateOfJoining(employee.getDateOfJoining())
                 .active(employee.isActive())
+                .region(employee.getRegion())
                 .carryForwardLeaves(employee.getCarryForwardLeaves())
                 .createdAt(employee.getCreatedAt())
                 .updatedAt(employee.getUpdatedAt())
@@ -99,6 +102,7 @@ public class EmployeeMapper {
                 .slackDisplayName(jpaEntity.getSlackDisplayName())
                 .dateOfJoining(jpaEntity.getDateOfJoining())
                 .active(jpaEntity.getActive())
+                .region(jpaEntity.getRegion())
                 .carryForwardLeaves(jpaEntity.getCarryForwardLeaves())
                 .createdAt(jpaEntity.getCreatedAt())
                 .updatedAt(jpaEntity.getUpdatedAt())
@@ -120,6 +124,7 @@ public class EmployeeMapper {
         jpaEntity.setSlackDisplayName(employee.getSlackDisplayName());
         jpaEntity.setDateOfJoining(employee.getDateOfJoining());
         jpaEntity.setActive(employee.isActive());
+        jpaEntity.setRegion(employee.getRegion());
         jpaEntity.setCarryForwardLeaves(employee.getCarryForwardLeaves());
         // updatedAt is automatically handled by @PreUpdate
     }

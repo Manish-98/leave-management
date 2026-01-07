@@ -60,7 +60,8 @@ public class EmployeeService {
                 command.getSlackId(),
                 command.getGoogleId(),
                 command.getSlackDisplayName(),
-                command.getDateOfJoining()
+                command.getDateOfJoining(),
+                command.getRegion()
         );
 
         // Set optional fields
@@ -206,7 +207,8 @@ public class EmployeeService {
                 command.getSlackId(),
                 command.getGoogleId(),
                 command.getSlackDisplayName(),
-                command.getDateOfJoining()
+                command.getDateOfJoining(),
+                command.getRegion()
         );
 
         // Update optional fields
