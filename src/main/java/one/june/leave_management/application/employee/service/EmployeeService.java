@@ -100,6 +100,21 @@ public class EmployeeService {
     }
 
     /**
+     * Get all employees by IDs
+     *
+     * @param ids the employee IDs
+     * @return list of employee DTOs
+     */
+    @Transactional(readOnly = true)
+    public List<EmployeeDto> findAllById(Iterable<UUID> ids) {
+        log.debug("Finding all employees by ids");
+
+        return employeeRepository.findAllById(ids).stream()
+                .map(employeeMapper::toDto)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
      * Get an employee by Slack ID
      *
      * @param slackId the Slack ID

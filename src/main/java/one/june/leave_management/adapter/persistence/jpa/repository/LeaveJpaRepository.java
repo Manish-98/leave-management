@@ -54,7 +54,8 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
      * @param pageable pagination and sorting parameters
      * @return page of leaves matching the filter criteria
      */
-    @Query("SELECT l FROM LeaveJpaEntity l WHERE " +
+    @Query("SELECT l FROM LeaveJpaEntity l " +
+           "LEFT JOIN FETCH l.sourceRefs WHERE " +
            "(:userId IS NULL OR l.userId = :userId) AND " +
            "(:year IS NULL OR " +
            "  (l.startDate <= :yearEnd AND l.endDate >= :yearStart)) AND " +

@@ -66,6 +66,14 @@ public class EmployeePersistenceAdapter implements EmployeeRepository {
 
     @Override
     @Transactional(readOnly = true)
+    public List<Employee> findAllById(Iterable<UUID> ids) {
+        return employeeJpaRepository.findAllById(ids).stream()
+                .map(employeeMapper::toDomainEntity)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<Employee> findBySlackId(String slackId) {
         return employeeJpaRepository.findBySlackId(slackId)
                 .map(employeeMapper::toDomainEntity);

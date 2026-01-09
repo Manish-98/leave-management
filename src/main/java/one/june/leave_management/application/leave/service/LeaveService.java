@@ -3,6 +3,7 @@ package one.june.leave_management.application.leave.service;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveFetchQuery;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
+import one.june.leave_management.application.employee.dto.EmployeeDto;
 import one.june.leave_management.application.employee.service.EmployeeService;
 import one.june.leave_management.common.annotation.Auditable;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
@@ -32,9 +33,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Unified service for leave operations.
@@ -133,8 +138,11 @@ public class LeaveService {
         // Fetch leaves from repository
         Page<Leave> leavesPage = leaveRepository.findByFilters(filters, sortedPageable);
 
-        // Convert to DTOs
-        Page<LeaveDto> dtoPage = leavesPage.map(leaveMapper::toDto);
+        // Batch fetch employees to avoid N+1 queries
+        java.util.Map<UUID, EmployeeDto> employeeCache = batchFetchEmployees(leavesPage.getContent());
+
+        // Convert to DTOs using employee cache
+        Page<LeaveDto> dtoPage = leavesPage.map(leave -> leaveMapper.toDto(leave, employeeCache));
 
         logger.info("Successfully fetched {} leaves (page {} of {})",
                     dtoPage.getNumberOfElements(),
@@ -142,6 +150,43 @@ public class LeaveService {
                     dtoPage.getTotalPages());
 
         return dtoPage;
+    }
+
+    /**
+     * Batch fetch all employees for the given leaves to avoid N+1 query problem.
+     *
+     * @param leaves list of leaves
+     * @return map of employee UUID to EmployeeDto
+     */
+    private Map<UUID, EmployeeDto> batchFetchEmployees(List<Leave> leaves) {
+        // Collect all unique user IDs
+        Set<UUID> userIds = leaves.stream()
+                .map(Leave::getUserId)
+                .filter(userId -> userId != null)
+                .map(userId -> {
+                    try {
+                        return UUID.fromString(userId);
+                    } catch (IllegalArgumentException e) {
+                        logger.warn("Invalid UUID format for userId: {}", userId);
+                        return null;
+                    }
+                })
+                .filter(uuid -> uuid != null)
+                .collect(Collectors.toSet());
+
+        // Batch fetch all employees
+        if (userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<EmployeeDto> employees = employeeService.findAllById(userIds);
+
+        // Create a map for quick lookup
+        return employees.stream()
+                .collect(Collectors.toMap(
+                        employee -> employee.getId(),
+                        employee -> employee
+                ));
     }
 
     /**

@@ -30,6 +30,14 @@ public interface EmployeeRepository {
     Optional<Employee> findById(UUID id);
 
     /**
+     * Find all employees by IDs
+     *
+     * @param ids the employee IDs
+     * @return list of employees matching the IDs
+     */
+    List<Employee> findAllById(Iterable<UUID> ids);
+
+    /**
      * Find an employee by Slack ID
      *
      * @param slackId the Slack ID

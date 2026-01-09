@@ -16,6 +16,8 @@ import one.june.leave_management.domain.leave.model.SourceType;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -77,6 +79,17 @@ public class LeaveMapper {
 
     // Domain ↔ DTO mappings
     public LeaveDto toDto(Leave leave) {
+        return toDto(leave, null);
+    }
+
+    /**
+     * Convert Leave domain entity to DTO with optional employee cache for batch operations.
+     *
+     * @param leave the leave entity
+     * @param employeeCache map of pre-fetched employees (UUID -> EmployeeDto), can be null
+     * @return the leave DTO
+     */
+    public LeaveDto toDto(Leave leave, Map<UUID, EmployeeDto> employeeCache) {
         if (leave == null) {
             return null;
         }
@@ -91,7 +104,13 @@ public class LeaveMapper {
         if (userId != null) {
             try {
                 java.util.UUID employeeUuid = java.util.UUID.fromString(userId);
-                employee = employeeService.findById(employeeUuid);
+
+                // Use cache if available, otherwise fetch from service
+                if (employeeCache != null && employeeCache.containsKey(employeeUuid)) {
+                    employee = employeeCache.get(employeeUuid);
+                } else {
+                    employee = employeeService.findById(employeeUuid);
+                }
             } catch (IllegalArgumentException e) {
                 // Invalid UUID format
                 org.slf4j.LoggerFactory.getLogger(LeaveMapper.class)
