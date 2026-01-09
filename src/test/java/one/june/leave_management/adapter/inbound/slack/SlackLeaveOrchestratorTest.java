@@ -9,6 +9,7 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenResponse;
+import one.june.leave_management.application.employee.dto.EmployeeDto;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveService;
@@ -1190,7 +1191,14 @@ class SlackLeaveOrchestratorTest {
     private LeaveDto createMockLeaveDto() {
         LeaveDto dto = new LeaveDto();
         dto.setId(UUID.randomUUID());
-        dto.setUserId(TEST_USER_ID);
+
+        // Create employee instead of setting userId
+        EmployeeDto employee = new EmployeeDto();
+        employee.setId(UUID.randomUUID());
+        employee.setName("Test User");
+        employee.setSlackId(TEST_USER_ID);
+        dto.setEmployee(employee);
+
         dto.setType(LeaveType.ANNUAL_LEAVE);
         dto.setDurationType(LeaveDurationType.FULL_DAY);
         dto.setDateRange(new DateRange(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 5)));

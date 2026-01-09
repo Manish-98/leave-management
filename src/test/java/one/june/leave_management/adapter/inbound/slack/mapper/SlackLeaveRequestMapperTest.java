@@ -54,8 +54,8 @@ class SlackLeaveRequestMapperTest {
     }
 
     @Test
-    @DisplayName("Should map Slack user ID to employee UUID successfully")
-    void shouldMapSlackUserIdToEmployeeUuid() {
+    @DisplayName("Should use Slack user ID directly")
+    void shouldUseSlackUserIdDirectly() {
         // Given
         Employee employee = Employee.builder()
                 .id(testEmployeeId)
@@ -72,7 +72,7 @@ class SlackLeaveRequestMapperTest {
 
         // Then
         assertThat(result).isNotNull();
-        assertThat(result.getUserId()).isEqualTo(testEmployeeId.toString());
+        assertThat(result.getUserId()).isEqualTo(testEmployeeId.toString()); // Should store employee UUID, not Slack ID
         assertThat(result.getSourceType()).isEqualTo(SourceType.SLACK);
         assertThat(result.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
         assertThat(result.getStatus()).isEqualTo(LeaveStatus.APPROVED);
@@ -99,8 +99,8 @@ class SlackLeaveRequestMapperTest {
     }
 
     @Test
-    @DisplayName("Should use employee UUID for optional holiday leave")
-    void shouldUseEmployeeUuidForOptionalHoliday() {
+    @DisplayName("Should use Slack user ID for optional holiday leave")
+    void shouldUseSlackUserIdForOptionalHoliday() {
         // Given
         Employee employee = Employee.builder()
                 .id(testEmployeeId)
@@ -127,7 +127,7 @@ class SlackLeaveRequestMapperTest {
 
         // Then
         assertThat(result).isNotNull();
-        assertThat(result.getUserId()).isEqualTo(testEmployeeId.toString());
+        assertThat(result.getUserId()).isEqualTo(testEmployeeId.toString()); // Should store employee UUID, not Slack ID
         assertThat(result.getType()).isEqualTo(LeaveType.OPTIONAL_HOLIDAY);
         assertThat(result.getDateRange()).isEqualTo(
                 DateRange.builder()

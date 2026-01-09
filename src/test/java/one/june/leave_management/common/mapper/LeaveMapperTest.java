@@ -3,6 +3,8 @@ package one.june.leave_management.common.mapper;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.adapter.persistence.jpa.entity.LeaveJpaEntity;
 import one.june.leave_management.adapter.persistence.jpa.entity.LeaveSourceRefJpaEntity;
+import one.june.leave_management.application.employee.dto.EmployeeDto;
+import one.june.leave_management.application.employee.service.EmployeeService;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.dto.LeaveSourceRefDto;
@@ -17,20 +19,30 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link LeaveMapper}
  * <p>
  * Tests mapping between different layers: Domain ↔ Entity ↔ DTO ↔ Request
  */
+@ExtendWith(MockitoExtension.class)
 @DisplayName("LeaveMapper Unit Tests")
 class LeaveMapperTest {
+
+    @Mock
+    private EmployeeService employeeService;
 
     private LeaveMapper mapper;
     private UUID testLeaveId;
@@ -38,18 +50,32 @@ class LeaveMapperTest {
     private LocalDate testStartDate;
     private LocalDate testEndDate;
     private DateRange testDateRange;
+    private EmployeeDto testEmployee;
 
     @BeforeEach
     void setUp() {
-        mapper = new LeaveMapper();
+        mapper = new LeaveMapper(employeeService);
         testLeaveId = UUID.randomUUID();
-        testUserId = "user123";
+        testUserId = "U123456";
         testStartDate = LocalDate.of(2025, 1, 1);
         testEndDate = LocalDate.of(2025, 1, 5);
         testDateRange = DateRange.builder()
                 .startDate(testStartDate)
                 .endDate(testEndDate)
                 .build();
+
+        // Create test employee
+        testEmployee = EmployeeDto.builder()
+                .id(UUID.randomUUID())
+                .name("Test User")
+                .slackId(testUserId)
+                .googleId(null)
+                .build();
+
+        // Mock employee service to return test employee (lenient to avoid unnecessary stubbing errors)
+        lenient().when(employeeService.findById(testEmployee.getId())).thenReturn(testEmployee);
+        lenient().when(employeeService.findBySlackId(testUserId)).thenReturn(java.util.Optional.of(testEmployee));
+        lenient().when(employeeService.findByGoogleId(any())).thenReturn(java.util.Optional.empty());
     }
 
     @Nested
@@ -62,7 +88,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -75,7 +101,7 @@ class LeaveMapperTest {
             // Then
             assertThat(entity).isNotNull();
             assertThat(entity.getId()).isEqualTo(testLeaveId);
-            assertThat(entity.getUserId()).isEqualTo(testUserId);
+            assertThat(entity.getUserId()).isEqualTo(testEmployee.getId().toString());
             assertThat(entity.getStartDate()).isEqualTo(testStartDate);
             assertThat(entity.getEndDate()).isEqualTo(testEndDate);
             assertThat(entity.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
@@ -89,7 +115,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -110,7 +136,7 @@ class LeaveMapperTest {
             // Given
             LeaveJpaEntity entity = LeaveJpaEntity.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .startDate(testStartDate)
                     .endDate(testEndDate)
                     .type(LeaveType.ANNUAL_LEAVE)
@@ -125,7 +151,7 @@ class LeaveMapperTest {
             // Then
             assertThat(domainLeave).isNotNull();
             assertThat(domainLeave.getId()).isEqualTo(testLeaveId);
-            assertThat(domainLeave.getUserId()).isEqualTo(testUserId);
+            assertThat(domainLeave.getUserId()).isEqualTo(testEmployee.getId().toString());
             assertThat(domainLeave.getDateRange()).isEqualTo(testDateRange);
             assertThat(domainLeave.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
             assertThat(domainLeave.getStatus()).isEqualTo(LeaveStatus.REQUESTED);
@@ -145,7 +171,7 @@ class LeaveMapperTest {
 
             LeaveJpaEntity entity = LeaveJpaEntity.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .startDate(testStartDate)
                     .endDate(testEndDate)
                     .type(LeaveType.ANNUAL_LEAVE)
@@ -202,7 +228,7 @@ class LeaveMapperTest {
 
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -216,7 +242,8 @@ class LeaveMapperTest {
             // Then
             assertThat(dto).isNotNull();
             assertThat(dto.getId()).isEqualTo(testLeaveId);
-            assertThat(dto.getUserId()).isEqualTo(testUserId);
+            assertThat(dto.getEmployee()).isNotNull();
+            assertThat(dto.getEmployee().getSlackId()).isEqualTo(testUserId);
             assertThat(dto.getDateRange()).isEqualTo(testDateRange);
             assertThat(dto.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
             assertThat(dto.getStatus()).isEqualTo(LeaveStatus.REQUESTED);
@@ -236,7 +263,7 @@ class LeaveMapperTest {
 
             LeaveDto dto = LeaveDto.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .employee(testEmployee)
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -250,7 +277,7 @@ class LeaveMapperTest {
             // Then
             assertThat(domainLeave).isNotNull();
             assertThat(domainLeave.getId()).isEqualTo(testLeaveId);
-            assertThat(domainLeave.getUserId()).isEqualTo(testUserId);
+            assertThat(domainLeave.getUserId()).isEqualTo(testEmployee.getId().toString()); // Should extract from employee.id (UUID)
             assertThat(domainLeave.getDateRange()).isEqualTo(testDateRange);
             assertThat(domainLeave.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
             assertThat(domainLeave.getStatus()).isEqualTo(LeaveStatus.REQUESTED);
@@ -284,7 +311,7 @@ class LeaveMapperTest {
             // Given
             LeaveDto dto = LeaveDto.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .employee(testEmployee)
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -310,7 +337,7 @@ class LeaveMapperTest {
         void shouldSuccessfullyMapRequestToDomain() {
             // Given
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -322,7 +349,7 @@ class LeaveMapperTest {
 
             // Then
             assertThat(domainLeave).isNotNull();
-            assertThat(domainLeave.getUserId()).isEqualTo(testUserId);
+            assertThat(domainLeave.getUserId()).isEqualTo(testEmployee.getId().toString());
             assertThat(domainLeave.getDateRange()).isEqualTo(testDateRange);
             assertThat(domainLeave.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
             assertThat(domainLeave.getStatus()).isEqualTo(LeaveStatus.REQUESTED);
@@ -335,7 +362,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -347,7 +374,7 @@ class LeaveMapperTest {
 
             // Then
             assertThat(request).isNotNull();
-            assertThat(request.getUserId()).isEqualTo(testUserId);
+            assertThat(request.getUserId()).isEqualTo(testEmployee.getId().toString());
             assertThat(request.getDateRange()).isEqualTo(testDateRange);
             assertThat(request.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
             assertThat(request.getStatus()).isEqualTo(LeaveStatus.REQUESTED);
@@ -486,7 +513,7 @@ class LeaveMapperTest {
         void shouldSuccessfullyMapRequestToCommandWithAllParameters() {
             // Given
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -503,7 +530,7 @@ class LeaveMapperTest {
 
             // Then
             assertThat(command).isNotNull();
-            assertThat(command.getUserId()).isEqualTo(testUserId);
+            assertThat(command.getUserId()).isEqualTo(testEmployee.getId().toString());
             assertThat(command.getDateRange()).isEqualTo(testDateRange);
             assertThat(command.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
             assertThat(command.getStatus()).isEqualTo(LeaveStatus.REQUESTED);
@@ -518,7 +545,7 @@ class LeaveMapperTest {
         void shouldMapRequestToCommandWithNullOverrideParameters() {
             // Given
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -556,7 +583,7 @@ class LeaveMapperTest {
         void shouldMapHalfDayDurationTypeCorrectly() {
             // Given
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.OPTIONAL_HOLIDAY)
                     .durationType(LeaveDurationType.FIRST_HALF)
@@ -584,7 +611,7 @@ class LeaveMapperTest {
             // Given
             Leave originalDomain = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -605,7 +632,7 @@ class LeaveMapperTest {
             // Given
             Leave originalDomain = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -651,7 +678,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -671,7 +698,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.OPTIONAL_HOLIDAY)
                     .status(LeaveStatus.REQUESTED)
@@ -691,7 +718,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -711,7 +738,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -731,7 +758,7 @@ class LeaveMapperTest {
             // Given
             Leave domainLeave = Leave.builder()
                     .id(testLeaveId)
-                    .userId(testUserId)
+                    .userId(testEmployee.getId().toString())
                     .dateRange(testDateRange)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)

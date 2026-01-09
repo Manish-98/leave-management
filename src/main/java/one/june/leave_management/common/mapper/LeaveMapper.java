@@ -1,6 +1,8 @@
 package one.june.leave_management.common.mapper;
 
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
+import one.june.leave_management.application.employee.dto.EmployeeDto;
+import one.june.leave_management.application.employee.service.EmployeeService;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.adapter.persistence.jpa.entity.LeaveJpaEntity;
 import one.june.leave_management.adapter.persistence.jpa.entity.LeaveSourceRefJpaEntity;
@@ -22,6 +24,12 @@ import java.util.stream.Collectors;
  */
 @Component
 public class LeaveMapper {
+
+    private final EmployeeService employeeService;
+
+    public LeaveMapper(EmployeeService employeeService) {
+        this.employeeService = employeeService;
+    }
 
     // Domain ↔ Entity mappings
     public LeaveJpaEntity toJpaEntity(Leave leave) {
@@ -77,9 +85,29 @@ public class LeaveMapper {
                 .map(this::toDto)
                 .collect(Collectors.toList());
 
+        // Find employee by internal UUID
+        EmployeeDto employee = null;
+        String userId = leave.getUserId();
+        if (userId != null) {
+            try {
+                java.util.UUID employeeUuid = java.util.UUID.fromString(userId);
+                employee = employeeService.findById(employeeUuid);
+            } catch (IllegalArgumentException e) {
+                // Invalid UUID format
+                org.slf4j.LoggerFactory.getLogger(LeaveMapper.class)
+                        .warn("Invalid UUID format for userId: {}", userId, e);
+                employee = null;
+            } catch (one.june.leave_management.common.exception.EmployeeNotFoundException e) {
+                // Employee not found
+                org.slf4j.LoggerFactory.getLogger(LeaveMapper.class)
+                        .debug("Employee not found for userId: {}", userId);
+                employee = null;
+            }
+        }
+
         return LeaveDto.builder()
                 .id(leave.getId())
-                .userId(leave.getUserId())
+                .employee(employee)
                 .dateRange(leave.getDateRange())
                 .type(leave.getType())
                 .status(leave.getStatus())
@@ -93,9 +121,15 @@ public class LeaveMapper {
             return null;
         }
 
+        // Extract userId from employee object (internal UUID)
+        String userId = null;
+        if (dto.getEmployee() != null) {
+            userId = dto.getEmployee().getId().toString();
+        }
+
         Leave leave = Leave.builder()
                 .id(dto.getId())
-                .userId(dto.getUserId())
+                .userId(userId)
                 .dateRange(dto.getDateRange())
                 .type(dto.getType())
                 .status(dto.getStatus())

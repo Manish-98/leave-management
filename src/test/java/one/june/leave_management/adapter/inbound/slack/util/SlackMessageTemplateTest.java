@@ -1,6 +1,7 @@
 package one.june.leave_management.adapter.inbound.slack.util;
 
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageRequest;
+import one.june.leave_management.application.employee.dto.EmployeeDto;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
@@ -22,6 +23,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @DisplayName("SlackMessageTemplate Unit Tests")
 class SlackMessageTemplateTest {
+
+    // Helper method to create test employee
+    private EmployeeDto createTestEmployee(String slackId, String name) {
+        return EmployeeDto.builder()
+                .id(UUID.randomUUID())
+                .name(name)
+                .slackId(slackId)
+                .googleId(null)
+                .active(true)
+                .build();
+    }
 
     @Nested
     @DisplayName("leaveRequestInitiated() Tests")
@@ -145,9 +157,11 @@ class SlackMessageTemplateTest {
         @DisplayName("Should verify message structure with null durationType (defaults to FULL_DAY)")
         void shouldVerifyStructureWithNullDurationType() {
             // Given
+            EmployeeDto employee = createTestEmployee("U67890", "Test User");
+
             LeaveDto leaveDto = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("U67890")
+                    .employee(employee)
                     .dateRange(new DateRange(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 1)))
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -166,9 +180,11 @@ class SlackMessageTemplateTest {
         @DisplayName("Should verify date formatting for single day leave")
         void shouldVerifyDateFormattingForSingleDay() {
             // Given
+            EmployeeDto employee = createTestEmployee("U67890", "Test User");
+
             LeaveDto leaveDto = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("U67890")
+                    .employee(employee)
                     .dateRange(new DateRange(LocalDate.of(2025, 1, 15), LocalDate.of(2025, 1, 15)))
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -189,7 +205,7 @@ class SlackMessageTemplateTest {
             // Given
             LeaveDto leaveDto = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("U67890")
+                    .employee(createTestEmployee("U67890", "Test User"))
                     .dateRange(new DateRange(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 5)))
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -210,7 +226,7 @@ class SlackMessageTemplateTest {
             // Given
             LeaveDto leaveDto = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("U67890")
+                    .employee(createTestEmployee("U67890", "Test User"))
                     .dateRange(null)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -232,7 +248,7 @@ class SlackMessageTemplateTest {
             LocalDate sameDate = LocalDate.of(2025, 1, 15);
             LeaveDto leaveDto = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("U67890")
+                    .employee(createTestEmployee("U67890", "Test User"))
                     .dateRange(new DateRange(sameDate, sameDate))
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -387,7 +403,7 @@ class SlackMessageTemplateTest {
     private LeaveDto createTestLeaveDto(LeaveDurationType durationType) {
         return LeaveDto.builder()
                 .id(UUID.randomUUID())
-                .userId("U67890")
+                .employee(createTestEmployee("U67890", "Test User"))
                 .dateRange(new DateRange(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 5)))
                 .type(LeaveType.ANNUAL_LEAVE)
                 .status(LeaveStatus.REQUESTED)

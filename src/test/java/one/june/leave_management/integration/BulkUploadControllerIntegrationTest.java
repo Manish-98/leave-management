@@ -13,6 +13,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.transaction.BeforeTransaction;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -40,8 +42,26 @@ class BulkUploadControllerIntegrationTest {
     @Autowired
     private BulkUploadRecordRepository bulkUploadRecordRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // Test employee IDs
+    private static final String USER1_ID = "123e4567-e89b-12d3-a456-426614174300";
+    private static final String USER1_SLACK_ID = "U301";
+
+    @BeforeTransaction
+    void setUpTestData() {
+        // Clean up and create test employee
+        jdbcTemplate.update("DELETE FROM employee WHERE id = ?", USER1_ID);
+        jdbcTemplate.update(
+                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                "VALUES (?, 'Bulk Upload User 1', ?, '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                USER1_ID, USER1_SLACK_ID
+        );
+    }
 
     @BeforeEach
     void setUp() {
@@ -57,7 +77,7 @@ class BulkUploadControllerIntegrationTest {
     void shouldAcceptCsvFileForBulkUpload() throws Exception {
         // Given
         String csvContent = "userId,startDate,endDate,type,durationType\n" +
-                "user1,2024-01-01,2024-01-05,ANNUAL_LEAVE,FULL_DAY";
+                "U301,2024-01-01,2024-01-05,ANNUAL_LEAVE,FULL_DAY";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -99,7 +119,7 @@ class BulkUploadControllerIntegrationTest {
                 "file",
                 "test.txt",
                 "text/plain",
-                "userId,startDate\nuser1,2024-01-01".getBytes(StandardCharsets.UTF_8)
+                "userId,startDate\nU301,2024-01-01".getBytes(StandardCharsets.UTF_8)
         );
 
         // When & Then
@@ -135,7 +155,7 @@ class BulkUploadControllerIntegrationTest {
     void shouldGetBulkUploadJobStatus() throws Exception {
         // Given - First create a job
         String csvContent = "userId,startDate,endDate,type,durationType\n" +
-                "user1,2024-01-01,2024-01-05,ANNUAL_LEAVE,FULL_DAY";
+                "U301,2024-01-01,2024-01-05,ANNUAL_LEAVE,FULL_DAY";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -173,9 +193,16 @@ class BulkUploadControllerIntegrationTest {
     @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     @DisplayName("Should download result file for completed job")
     void shouldDownloadResultFileForCompletedJob() throws Exception {
-        // Given
+        // Given - Ensure employee exists (NOT_SUPPORTED test needs explicit setup)
+        jdbcTemplate.update("DELETE FROM employee WHERE id = ?", USER1_ID);
+        jdbcTemplate.update(
+                "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
+                "VALUES (?, 'Bulk Upload User 1', ?, '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                USER1_ID, USER1_SLACK_ID
+        );
+
         String csvContent = "userId,startDate,endDate,type,durationType\n" +
-                "user1,2024-01-01,2024-01-05,ANNUAL_LEAVE,FULL_DAY";
+                "U301,2024-01-01,2024-01-05,ANNUAL_LEAVE,FULL_DAY";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",

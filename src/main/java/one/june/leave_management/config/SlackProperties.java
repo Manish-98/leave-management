@@ -62,4 +62,11 @@ public class SlackProperties {
      */
     @Builder.Default
     private String viewsUpdateEndpoint = "/views.update";
+
+    /**
+     * Slack users.list API endpoint path
+     * Can be overridden for testing or different API versions
+     */
+    @Builder.Default
+    private String usersListEndpoint = "/users.list";
 }

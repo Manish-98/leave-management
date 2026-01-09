@@ -65,7 +65,9 @@ class SlackViewSubmissionIntegrationTest {
     void setUpTestData() {
         // Clean up existing test employees
         String[] slackIds = {"U12345", "U67890", "U11111", "U22222", "U99999"};
+        // First, fetch the employee UUIDs for these Slack IDs
         for (String slackId : slackIds) {
+            // Delete by employee ID (UUID) instead of Slack ID
             jdbcTemplate.update("DELETE FROM leave WHERE user_id IN (SELECT id FROM employee WHERE slack_id = ?)", slackId);
             jdbcTemplate.update("DELETE FROM employee WHERE slack_id = ?", slackId);
         }

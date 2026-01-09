@@ -272,13 +272,6 @@ public class CsvEmployeeParserStrategy implements CsvParserStrategy<EmployeeCrea
         String carryForwardLeavesStr = headerIndex.containsKey("carryforwardleaves") ?
                 parseOptionalField(getRowValue(row, headerIndex, "carryforwardleaves"), "carryForwardLeaves", rowNumber) : "0";
 
-        // Validate at least one external ID
-        if ((slackId == null || slackId.trim().isEmpty()) &&
-            (googleId == null || googleId.trim().isEmpty())) {
-            throw new CsvValidationException(
-                    "At least one external ID (slackId or googleId) is required", rowNumber);
-        }
-
         // Parse carry forward leaves and use current year
         int carryForwardDays = parseInteger(carryForwardLeavesStr, "carryForwardLeaves", rowNumber);
         Map<Integer, Integer> carryForwardLeaves = new HashMap<>();

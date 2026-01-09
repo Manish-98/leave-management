@@ -81,6 +81,7 @@ class LeaveFetchIntegrationTest {
                 USER2_ID);
 
         // Create leaves with different users, years, and quarters
+        // Note: Using slackId as userId since the mapper looks up employees by slackId/googleId
         createLeaveViaJdbc(USER1_ID, LocalDate.of(2024, 1, 10), LocalDate.of(2024, 1, 12), "source-174200-2024-01-10"); // Q1
         createLeaveViaJdbc(USER1_ID, LocalDate.of(2024, 4, 15), LocalDate.of(2024, 4, 16), "source-174200-2024-04-15"); // Q2
         createLeaveViaJdbc(USER1_ID, LocalDate.of(2024, 7, 20), LocalDate.of(2024, 7, 22), "source-174200-2024-07-20"); // Q3
@@ -133,7 +134,7 @@ class LeaveFetchIntegrationTest {
     void fetchLeavesByUserIdShouldReturnOnlyUserLeaves() {
         // When
         ResponseEntity<String> response = restTemplate.exchange(
-                baseUrl + "?userId=" + USER1_ID,
+                baseUrl + "?userId=" + USER1_ID,  // Use employee UUID as filter
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 String.class
@@ -143,7 +144,9 @@ class LeaveFetchIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         // User1 should have 6 leaves (4 in 2024 + 2 in 2023)
-        assertThat(response.getBody()).contains("\"userId\":\"" + USER1_ID + "\"");
+        // Check that employee object is present with slackId
+        assertThat(response.getBody()).contains("\"employee\":{");
+        assertThat(response.getBody()).contains("\"slackId\":\"U201\"");
     }
 
     @Test
@@ -184,7 +187,7 @@ class LeaveFetchIntegrationTest {
     void fetchLeavesByUserAndYearShouldReturnFilteredResults() {
         // When
         ResponseEntity<String> response = restTemplate.exchange(
-                baseUrl + "?userId=" + USER1_ID + "&year=2024",
+                baseUrl + "?userId=" + USER1_ID + "&year=2024",  // Use employee UUID as filter
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 String.class
@@ -195,14 +198,16 @@ class LeaveFetchIntegrationTest {
         assertThat(response.getBody()).isNotNull();
         // Should return user1's 2024 leaves (4 total)
         assertThat(response.getBody()).contains("\"totalElements\":4");
-        assertThat(response.getBody()).contains("\"userId\":\"" + USER1_ID + "\"");
+        // Check that employee object is present with slackId
+        assertThat(response.getBody()).contains("\"employee\":{");
+        assertThat(response.getBody()).contains("\"slackId\":\"U201\"");
     }
 
     @Test
     void fetchLeavesByUserYearAndQuarterShouldReturnFilteredResults() {
         // When
         ResponseEntity<String> response = restTemplate.exchange(
-                baseUrl + "?userId=" + USER1_ID + "&year=2024&quarter=Q2",
+                baseUrl + "?userId=" + USER1_ID + "&year=2024&quarter=Q2",  // Use employee UUID as filter
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 String.class
@@ -213,7 +218,9 @@ class LeaveFetchIntegrationTest {
         assertThat(response.getBody()).isNotNull();
         // Should return user1's Q2 2024 leaves (1 leave in April)
         assertThat(response.getBody()).contains("\"totalElements\":1");
-        assertThat(response.getBody()).contains("\"userId\":\"" + USER1_ID + "\"");
+        // Check that employee object is present with slackId
+        assertThat(response.getBody()).contains("\"employee\":{");
+        assertThat(response.getBody()).contains("\"slackId\":\"U201\"");
         assertThat(response.getBody()).contains("\"startDate\":\"2024-04-15\"");
     }
 

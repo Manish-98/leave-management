@@ -76,40 +76,42 @@ public class OptionalHolidayValidationStrategy extends LeaveValidationStrategyBa
     /**
      * Fetches optional holiday dates filtered by the employee's region.
      *
-     * @param leave the leave request containing the user ID
+     * @param leave the leave request containing the user ID (slackId or googleId)
      * @return list of optional holiday dates for the employee's region
      */
     private List<LocalDate> fetchOptionalHolidayDates(Leave leave) {
         logger.debug("Fetching optional holiday dates for user: {}", leave.getUserId());
 
+        // Parse UUID and find employee
+        UUID employeeUuid;
         try {
-            // Fetch employee to get their region
-            UUID employeeId = UUID.fromString(leave.getUserId());
-            var employeeOpt = employeeRepository.findById(employeeId);
-
-            if (employeeOpt.isEmpty()) {
-                logger.warn("Employee not found with ID: {}, returning empty holiday list",
-                           leave.getUserId());
-                return List.of();
-            }
-
-            var employee = employeeOpt.get();
-            var employeeRegion = employee.getRegion();
-
-            logger.debug("Employee region: {}", employeeRegion);
-
-            // Fetch holidays for the employee's region
-            List<OptionalHoliday> holidays = optionalHolidayRepository.findByRegionOrderByDateAsc(employeeRegion);
-            List<LocalDate> dates = holidays.stream()
-                    .map(OptionalHoliday::getDate)
-                    .collect(Collectors.toList());
-
-            logger.debug("Found {} optional holiday dates for region: {}", dates.size(), employeeRegion);
-            return dates;
+            employeeUuid = UUID.fromString(leave.getUserId());
         } catch (IllegalArgumentException e) {
-            logger.error("Invalid user ID format: {}", leave.getUserId(), e);
+            logger.warn("Invalid employee UUID format: {}, returning empty holiday list", leave.getUserId());
             return List.of();
         }
+
+        var employeeOpt = employeeRepository.findById(employeeUuid);
+
+        if (employeeOpt.isEmpty()) {
+            logger.warn("Employee not found with ID: {}, returning empty holiday list",
+                           leave.getUserId());
+            return List.of();
+        }
+
+        var employee = employeeOpt.get();
+        var employeeRegion = employee.getRegion();
+
+        logger.debug("Employee region: {}", employeeRegion);
+
+        // Fetch holidays for the employee's region
+        List<OptionalHoliday> holidays = optionalHolidayRepository.findByRegionOrderByDateAsc(employeeRegion);
+        List<LocalDate> dates = holidays.stream()
+                .map(OptionalHoliday::getDate)
+                .collect(Collectors.toList());
+
+        logger.debug("Found {} optional holiday dates for region: {}", dates.size(), employeeRegion);
+        return dates;
     }
 
     /**
@@ -125,46 +127,50 @@ public class OptionalHolidayValidationStrategy extends LeaveValidationStrategyBa
     private int calculateMaxAllowedForEmployee(Leave leave) {
         logger.debug("Calculating max allowed optional holidays for user: {}", leave.getUserId());
 
+        // Parse UUID and find employee
+        UUID employeeUuid;
         try {
-            UUID employeeId = UUID.fromString(leave.getUserId());
-            Optional<Employee> employeeOpt = employeeRepository.findById(employeeId);
-
-            if (employeeOpt.isEmpty()) {
-                logger.warn("Employee not found with ID: {}, falling back to configured max",
-                           leave.getUserId());
-                return leaveProperties.getMaxOptionalHolidaysPerYear();
-            }
-
-            Employee employee = employeeOpt.get();
-            LocalDate dateOfJoining = employee.getDateOfJoining();
-            LocalDate leaveDate = leave.getStartDate();
-            int configuredMax = leaveProperties.getMaxOptionalHolidaysPerYear();
-
-            // If employee joined in a previous year, they get full max
-            if (dateOfJoining.getYear() < leaveDate.getYear()) {
-                logger.debug("Employee joined in previous year {}, full max allowed: {}",
-                           dateOfJoining.getYear(), configuredMax);
-                return configuredMax;
-            }
-
-            // Employee joined in current year - check which half
-            int joiningMonth = dateOfJoining.getMonthValue();
-
-            if (joiningMonth <= 6) {
-                // Jan-Jun: full max
-                logger.debug("Employee joined in first half of current year (month {}), full max allowed: {}",
-                           joiningMonth, configuredMax);
-                return configuredMax;
-            } else {
-                // Jul-Dec: prorated (ceil of half)
-                int proratedMax = (int) Math.ceil(configuredMax / 2.0);
-                logger.debug("Employee joined in second half of current year (month {}), prorated max allowed: {}",
-                           joiningMonth, proratedMax);
-                return proratedMax;
-            }
+            employeeUuid = UUID.fromString(leave.getUserId());
         } catch (IllegalArgumentException e) {
-            logger.error("Invalid user ID format: {}", leave.getUserId(), e);
+            logger.warn("Invalid employee UUID format: {}, falling back to configured max",
+                       leave.getUserId());
             return leaveProperties.getMaxOptionalHolidaysPerYear();
+        }
+
+        var employeeOpt = employeeRepository.findById(employeeUuid);
+
+        if (employeeOpt.isEmpty()) {
+            logger.warn("Employee not found with ID: {}, falling back to configured max",
+                       leave.getUserId());
+            return leaveProperties.getMaxOptionalHolidaysPerYear();
+        }
+
+        Employee employee = employeeOpt.get();
+        LocalDate dateOfJoining = employee.getDateOfJoining();
+        LocalDate leaveDate = leave.getStartDate();
+        int configuredMax = leaveProperties.getMaxOptionalHolidaysPerYear();
+
+        // If employee joined in a previous year, they get full max
+        if (dateOfJoining.getYear() < leaveDate.getYear()) {
+            logger.debug("Employee joined in previous year {}, full max allowed: {}",
+                       dateOfJoining.getYear(), configuredMax);
+            return configuredMax;
+        }
+
+        // Employee joined in current year - check which half
+        int joiningMonth = dateOfJoining.getMonthValue();
+
+        if (joiningMonth <= 6) {
+            // Jan-Jun: full max
+            logger.debug("Employee joined in first half of current year (month {}), full max allowed: {}",
+                       joiningMonth, configuredMax);
+            return configuredMax;
+        } else {
+            // Jul-Dec: prorated (ceil of half)
+            int proratedMax = (int) Math.ceil(configuredMax / 2.0);
+            logger.debug("Employee joined in second half of current year (month {}), prorated max allowed: {}",
+                       joiningMonth, proratedMax);
+            return proratedMax;
         }
     }
 

@@ -1,6 +1,7 @@
 package one.june.leave_management.application.leave.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import one.june.leave_management.application.employee.dto.EmployeeDto;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
@@ -28,8 +29,8 @@ public class LeaveDto {
     @Schema(description = "Unique identifier of the leave request", example = "123e4567-e89b-12d3-a456-426614174000")
     private UUID id;
 
-    @Schema(description = "User ID who requested the leave", example = "user123")
-    private String userId;
+    @Schema(description = "Employee who requested the leave", implementation = EmployeeDto.class)
+    private EmployeeDto employee;
 
     @Schema(description = "Date range of the leave period", implementation = DateRange.class)
     private DateRange dateRange;

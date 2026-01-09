@@ -3,8 +3,10 @@ package one.june.leave_management.application.leave.service;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveFetchQuery;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
+import one.june.leave_management.application.employee.service.EmployeeService;
 import one.june.leave_management.common.annotation.Auditable;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
+import one.june.leave_management.common.exception.EmployeeNotFoundException;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.domain.leave.model.Leave;
 import one.june.leave_management.domain.leave.model.LeaveFilters;
@@ -53,6 +55,7 @@ public class LeaveService {
     private final BulkUploadJobRepository bulkUploadJobRepository;
     private final CsvResultService csvResultService;
     private final LeaveBulkUploadStrategy leaveBulkUploadStrategy;
+    private final EmployeeService employeeService;
 
     public LeaveService(LeaveRepository leaveRepository,
                         LeaveSourceRefRepository leaveSourceRefRepository,
@@ -62,7 +65,8 @@ public class LeaveService {
                         BulkUploadRecordRepository bulkUploadRecordRepository,
                         BulkUploadJobRepository bulkUploadJobRepository,
                         CsvResultService csvResultService,
-                        LeaveBulkUploadStrategy leaveBulkUploadStrategy) {
+                        LeaveBulkUploadStrategy leaveBulkUploadStrategy,
+                        EmployeeService employeeService) {
         this.leaveRepository = leaveRepository;
         this.leaveSourceRefRepository = leaveSourceRefRepository;
         this.outboundSyncService = outboundSyncService;
@@ -72,6 +76,7 @@ public class LeaveService {
         this.bulkUploadJobRepository = bulkUploadJobRepository;
         this.csvResultService = csvResultService;
         this.leaveBulkUploadStrategy = leaveBulkUploadStrategy;
+        this.employeeService = employeeService;
     }
 
     /**
@@ -189,6 +194,7 @@ public class LeaveService {
 
     private Leave createNewLeave(LeaveIngestionCommand command) {
         logger.debug("Creating new leave from command");
+        validateEmployeeExists(command.getUserId());
         return Leave.builder()
                 .userId(command.getUserId())
                 .dateRange(command.getDateRange())
@@ -201,6 +207,8 @@ public class LeaveService {
     private Leave updateExistingLeave(LeaveIngestionCommand command, LeaveSourceRef sourceRef) {
         logger.debug("Updating existing leave for source reference: {}", sourceRef);
 
+        validateEmployeeExists(command.getUserId());
+
         Leave leave = findOrCreateLeaveFromSourceRef(sourceRef);
         leave.update(
                 command.getUserId(),
@@ -210,6 +218,27 @@ public class LeaveService {
                 command.getStatus()
         );
         return leave;
+    }
+
+    /**
+     * Validates that the userId is a valid UUID and the employee exists
+     *
+     * @param userId the user ID to validate
+     * @throws IllegalArgumentException if userId is not a valid UUID
+     * @throws EmployeeNotFoundException if employee doesn't exist
+     */
+    private void validateEmployeeExists(String userId) {
+        if (userId == null) {
+            throw new IllegalArgumentException("User ID cannot be null");
+        }
+
+        try {
+            UUID employeeUuid = UUID.fromString(userId);
+            // Validate that employee exists
+            employeeService.findById(employeeUuid);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid UUID format for user ID: " + userId, e);
+        }
     }
 
     private LeaveSourceRef createSourceReference(LeaveIngestionCommand command, Leave leave) {

@@ -3,6 +3,7 @@ package one.june.leave_management.adapter.inbound.web;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveFetchQuery;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.adapter.inbound.web.dto.BulkUploadResponse;
+import one.june.leave_management.application.employee.dto.EmployeeDto;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.BulkUploadService;
@@ -64,6 +65,17 @@ class LeaveControllerTest {
         controller = new LeaveController(leaveService, leaveMapper, bulkUploadService);
     }
 
+    // Helper method to create test employee
+    private EmployeeDto createTestEmployee(String slackId, String name) {
+        return EmployeeDto.builder()
+                .id(UUID.randomUUID())
+                .name(name)
+                .slackId(slackId)
+                .googleId(null)
+                .active(true)
+                .build();
+    }
+
     @Nested
     @DisplayName("POST /api/leaves/ingest - Ingest Leave Tests")
     class IngestLeaveTests {
@@ -98,9 +110,11 @@ class LeaveControllerTest {
                     .durationType(LeaveDurationType.FULL_DAY)
                     .build();
 
+            EmployeeDto testEmployee = createTestEmployee("user-123", "Test User");
+
             LeaveDto expectedDto = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("user-123")
+                    .employee(testEmployee)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
                     .durationType(LeaveDurationType.FULL_DAY)
@@ -117,7 +131,7 @@ class LeaveControllerTest {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().getId()).isEqualTo(expectedDto.getId());
-            assertThat(response.getBody().getUserId()).isEqualTo("user-123");
+            assertThat(response.getBody().getEmployee().getSlackId()).isEqualTo("user-123");
             assertThat(response.getBody().getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
             assertThat(response.getBody().getStatus()).isEqualTo(LeaveStatus.REQUESTED);
 
@@ -155,9 +169,11 @@ class LeaveControllerTest {
                     .durationType(LeaveDurationType.FIRST_HALF)
                     .build();
 
+            EmployeeDto testEmployee = createTestEmployee("user-456", "Test User 456");
+
             LeaveDto expectedDto = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("user-456")
+                    .employee(testEmployee)
                     .type(LeaveType.OPTIONAL_HOLIDAY)
                     .status(LeaveStatus.APPROVED)
                     .durationType(LeaveDurationType.FIRST_HALF)
@@ -204,9 +220,11 @@ class LeaveControllerTest {
                         .durationType(request.getDurationType())
                         .build();
 
+                EmployeeDto testEmployee = createTestEmployee("user-duration", "Duration User");
+
                 LeaveDto expectedDto = LeaveDto.builder()
                         .id(UUID.randomUUID())
-                        .userId("user-duration")
+                        .employee(testEmployee)
                         .durationType(durationType)
                         .dateRange(request.getDateRange())
                         .type(request.getType())
@@ -237,14 +255,17 @@ class LeaveControllerTest {
             Pageable pageable = PageRequest.of(0, 20);
             LeaveFetchQuery query = LeaveFetchQuery.builder().build();
 
+            EmployeeDto employee1 = createTestEmployee("user-1", "User 1");
+            EmployeeDto employee2 = createTestEmployee("user-2", "User 2");
+
             LeaveDto leave1 = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("user-1")
+                    .employee(employee1)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .build();
             LeaveDto leave2 = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId("user-2")
+                    .employee(employee2)
                     .type(LeaveType.OPTIONAL_HOLIDAY)
                     .build();
 
@@ -271,9 +292,11 @@ class LeaveControllerTest {
             Pageable pageable = PageRequest.of(0, 20);
             LeaveFetchQuery query = LeaveFetchQuery.builder().userId(userId).build();
 
+            EmployeeDto employee = createTestEmployee(userId, "User 123");
+
             LeaveDto leave = LeaveDto.builder()
                     .id(UUID.randomUUID())
-                    .userId(userId)
+                    .employee(employee)
                     .type(LeaveType.ANNUAL_LEAVE)
                     .build();
 
@@ -286,7 +309,7 @@ class LeaveControllerTest {
             // Then
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().getContent()).hasSize(1);
-            assertThat(response.getBody().getContent().get(0).getUserId()).isEqualTo(userId);
+            assertThat(response.getBody().getContent().get(0).getEmployee().getSlackId()).isEqualTo(userId);
 
             verify(leaveService).fetchLeaves(query, pageable);
         }

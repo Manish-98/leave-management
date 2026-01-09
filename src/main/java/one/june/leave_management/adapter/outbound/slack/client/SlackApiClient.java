@@ -5,11 +5,16 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackErrorMessageReq
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
+import one.june.leave_management.adapter.outbound.slack.dto.SlackUsersListResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateResponse;
+import one.june.leave_management.application.slack.dto.SlackUserDto;
 import one.june.leave_management.config.SlackProperties;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -448,5 +453,138 @@ public class SlackApiClient {
 
         // Reuse postMessage logic
         return postMessage(channelId, message);
+    }
+
+    /**
+     * Fetches all users from the Slack workspace using the users.list API
+     * <p>
+     * This method calls the Slack API to retrieve all users in the workspace.
+     * It handles pagination automatically to fetch all users, regardless of workspace size.
+     * <p>
+     * Slack API reference: https://api.slack.com/methods/users.list
+     *
+     * @return List of all Slack users in the workspace
+     * @throws RuntimeException if the API call fails
+     */
+    public java.util.List<SlackUserDto> fetchWorkspaceUsers() {
+        log.info("Fetching all users from Slack workspace");
+
+        String botToken = slackProperties.getBotToken();
+
+        // Validate inputs
+        if (botToken == null || botToken.trim().isEmpty()) {
+            log.error("Slack bot token is null or empty. Please configure slack.bot-token property.");
+            throw new RuntimeException("Slack bot token is not configured");
+        }
+
+        String fullApiUrl = slackProperties.getApiBaseUrl() + slackProperties.getUsersListEndpoint();
+
+        try {
+            java.util.List<SlackUserDto> allUsers = new java.util.ArrayList<>();
+            String cursor = null;
+            int pageCount = 0;
+
+            do {
+                pageCount++;
+                log.debug("Fetching page {} of users from Slack API", pageCount);
+
+                // Build URL with pagination cursor if needed
+                String url = fullApiUrl;
+                if (cursor != null && !cursor.isEmpty()) {
+                    url = UriComponentsBuilder.fromUriString(fullApiUrl)
+                            .queryParam("cursor", cursor)
+                            .build()
+                            .toUriString();
+                }
+
+                // Set up headers with authorization
+                HttpHeaders headers = new HttpHeaders();
+                headers.setBearerAuth(botToken);
+
+                // Create the HTTP entity with headers (no body for GET request)
+                HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+                // Make the API call
+                ResponseEntity<SlackUsersListResponse> responseEntity = restTemplate.exchange(
+                        url,
+                        HttpMethod.GET,
+                        entity,
+                        SlackUsersListResponse.class
+                );
+
+                log.debug("Received response from Slack API. Status: {}", responseEntity.getStatusCode());
+
+                SlackUsersListResponse response = responseEntity.getBody();
+
+                if (response == null) {
+                    log.error("Received null response body from Slack users.list API");
+                    throw new RuntimeException("Null response from Slack API");
+                }
+
+                if (!response.isOk()) {
+                    log.error("Slack users.list API returned error: {}. Full response: {}",
+                            response.getError(), response);
+                    throw new RuntimeException("Slack API error: " + response.getError());
+                }
+
+                // Map Slack users to our DTO
+                if (response.getMembers() != null) {
+                    for (SlackUsersListResponse.SlackUser slackUser : response.getMembers()) {
+                        SlackUserDto dto = mapToSlackUserDto(slackUser);
+                        allUsers.add(dto);
+                    }
+                    log.debug("Fetched {} users on page {}", response.getMembers().size(), pageCount);
+                }
+
+                // Check if there are more pages
+                if (response.getResponseMetadata() != null &&
+                        response.getResponseMetadata().getNextCursor() != null &&
+                        !response.getResponseMetadata().getNextCursor().isEmpty()) {
+                    cursor = response.getResponseMetadata().getNextCursor();
+                    log.debug("More pages available. Next cursor: {}", cursor);
+                } else {
+                    cursor = null;
+                }
+
+            } while (cursor != null);
+
+            log.info("Successfully fetched {} users from Slack workspace across {} pages",
+                    allUsers.size(), pageCount);
+            return allUsers;
+
+        } catch (RestClientException e) {
+            log.error("HTTP error calling Slack users.list API. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("HTTP error calling Slack API: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Unexpected error calling Slack users.list API. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("Unexpected error calling Slack API: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Maps a Slack user from the API response to our SlackUserDto
+     *
+     * @param slackUser The user from Slack API response
+     * @return Mapped SlackUserDto
+     */
+    private SlackUserDto mapToSlackUserDto(SlackUsersListResponse.SlackUser slackUser) {
+        SlackUserDto.SlackUserDtoBuilder builder = SlackUserDto.builder()
+                .slackId(slackUser.getId())
+                .name(slackUser.getProfile() != null ? slackUser.getProfile().getRealName() : slackUser.getName())
+                .displayName(slackUser.getProfile() != null ? slackUser.getProfile().getDisplayName() : slackUser.getName())
+                .teamId(slackUser.getTeamId())
+                .isBot(slackUser.isBot())
+                .deleted(slackUser.isDeleted())
+                .isActive("active".equalsIgnoreCase(slackUser.getPresence()) ||
+                        (!slackUser.isDeleted() && !slackUser.isBot() && !slackUser.isAppUser()));
+
+        // Email is optional and may not be present
+        if (slackUser.getProfile() != null && slackUser.getProfile().getEmail() != null) {
+            builder.email(slackUser.getProfile().getEmail());
+        }
+
+        return builder.build();
     }
 }

@@ -75,18 +75,20 @@ public abstract class LeaveValidationStrategyBase {
             return LeaveValidationResult.failure("New leaves must have at least one source reference");
         }
 
-        // Validate that the employee exists for the given userId
+        // Validate that the employee exists for the given userId (employee UUID)
         if (leave.getUserId() != null) {
+            String userId = leave.getUserId();
+            // Parse UUID and check if employee exists
             try {
-                UUID employeeId = UUID.fromString(leave.getUserId());
-                if (!employeeRepository.existsById(employeeId)) {
+                java.util.UUID employeeUuid = java.util.UUID.fromString(userId);
+                if (!employeeRepository.findById(employeeUuid).isPresent()) {
                     return LeaveValidationResult.failure(
-                            String.format("Employee not found with ID: %s", leave.getUserId())
+                            String.format("Employee not found with ID: %s", userId)
                     );
                 }
             } catch (IllegalArgumentException e) {
                 return LeaveValidationResult.failure(
-                        String.format("Invalid user ID format: %s", leave.getUserId())
+                        String.format("Invalid employee UUID format: %s", userId)
                 );
             }
         }

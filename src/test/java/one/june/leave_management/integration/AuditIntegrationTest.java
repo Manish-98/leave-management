@@ -44,8 +44,10 @@ class AuditIntegrationTest {
     private RestTemplate restTemplate;
 
     private static final LocalDate FIXED_DATE = LocalDate.of(2024, 6, 15);
-    private static final String AUDIT_USER_1 = "123e4567-e89b-12d3-a456-426614174300";
-    private static final String AUDIT_USER_2 = "123e4567-e89b-12d3-a456-426614174301";
+    private static final String AUDIT_USER_1_SLACK = "U301";
+    private static final String AUDIT_USER_2_SLACK = "U302";
+    private static final String AUDIT_USER_1_UUID = "123e4567-e89b-12d3-a456-426614174300";
+    private static final String AUDIT_USER_2_UUID = "123e4567-e89b-12d3-a456-426614174301";
 
     @BeforeEach
     void setUp() {
@@ -53,18 +55,19 @@ class AuditIntegrationTest {
         restTemplate = new RestTemplate();
 
         // Clean up and create test employees
-        jdbcTemplate.update("DELETE FROM leave WHERE user_id IN (?, ?)", AUDIT_USER_1, AUDIT_USER_2);
-        jdbcTemplate.update("DELETE FROM employee WHERE id IN (?, ?)", AUDIT_USER_1, AUDIT_USER_2);
+        // Delete leaves by employee UUID instead of Slack ID
+        jdbcTemplate.update("DELETE FROM leave WHERE user_id IN (?, ?)", AUDIT_USER_1_UUID, AUDIT_USER_2_UUID);
+        jdbcTemplate.update("DELETE FROM employee WHERE slack_id IN (?, ?)", AUDIT_USER_1_SLACK, AUDIT_USER_2_SLACK);
 
         jdbcTemplate.update(
                 "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
-                "VALUES (?, 'Audit User 1', 'U301', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                AUDIT_USER_1);
+                "VALUES (?, 'Audit User 1', ?, '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                AUDIT_USER_1_UUID, AUDIT_USER_1_SLACK);
 
         jdbcTemplate.update(
                 "INSERT INTO employee (id, name, slack_id, date_of_joining, active, region, created_at, updated_at) " +
-                "VALUES (?, 'Audit User 2', 'U302', '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                AUDIT_USER_2);
+                "VALUES (?, 'Audit User 2', ?, '2020-01-01', true, 'PUNE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                AUDIT_USER_2_UUID, AUDIT_USER_2_SLACK);
 
         // Force commit
         jdbcTemplate.execute("COMMIT");
@@ -106,7 +109,7 @@ class AuditIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("audit-test-123")
-                .userId(AUDIT_USER_1)
+                .userId("123e4567-e89b-12d3-a456-426614174300")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
@@ -122,7 +125,8 @@ class AuditIntegrationTest {
         // Then - HTTP response is successful
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         String responseBody = response.getBody();
-        assertThat(responseBody).contains("\"userId\":\"" + AUDIT_USER_1 + "\"");
+        assertThat(responseBody).contains("\"employee\":{");
+        assertThat(responseBody).contains("\"slackId\":\"" + AUDIT_USER_1_SLACK + "\"");
 
         // Extract request ID from response headers
         String requestId = response.getHeaders().getFirst("X-Request-Id");
@@ -137,18 +141,18 @@ class AuditIntegrationTest {
         assertThat(auditLog.get("source_type")).isEqualTo("WEB");
         assertThat(auditLog.get("response_status")).isEqualTo(201);
 
-        // Verify request body was captured (contains userId)
+        // Verify request body was captured (contains userId - now employee UUID)
         String requestBody = (String) auditLog.get("request_body");
         assertThat(requestBody).isNotNull();
-        assertThat(requestBody).contains(AUDIT_USER_1);
+        assertThat(requestBody).contains(AUDIT_USER_1_UUID);
 
-        // Verify response body was captured (contains userId)
+        // Verify response body was captured (contains userId - now employee UUID)
         String responseBodyDb = (String) auditLog.get("response_body");
         assertThat(responseBodyDb).isNotNull();
-        assertThat(responseBodyDb).contains(AUDIT_USER_1);
+        assertThat(responseBodyDb).contains(AUDIT_USER_1_UUID);
 
-        // Verify user ID was extracted
-        assertThat(auditLog.get("user_id")).isEqualTo(AUDIT_USER_1);
+        // Verify user ID was extracted (now employee UUID)
+        assertThat(auditLog.get("user_id")).isEqualTo(AUDIT_USER_1_UUID);
 
         // Verify execution time was captured
         assertThat(auditLog.get("execution_time_ms")).isNotNull();
@@ -168,7 +172,7 @@ class AuditIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("audit-error-test")
-                .userId(AUDIT_USER_2)
+                .userId("123e4567-e89b-12d3-a456-426614174301")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(5))
                         .endDate(FIXED_DATE.plusDays(2)) // Invalid: end before start
@@ -209,7 +213,7 @@ class AuditIntegrationTest {
             // Verify request body was still captured
             String requestBody = (String) auditLog.get("request_body");
             assertThat(requestBody).isNotNull();
-            assertThat(requestBody).contains(AUDIT_USER_2);
+            assertThat(requestBody).contains(AUDIT_USER_2_UUID);
 
             // Verify execution time was captured even for failed request
             assertThat(auditLog.get("execution_time_ms")).isNotNull();
@@ -226,7 +230,7 @@ class AuditIntegrationTest {
             LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                     .sourceType(SourceType.WEB)
                     .sourceId("audit-multi-" + i)
-                    .userId(AUDIT_USER_1)
+                    .userId("123e4567-e89b-12d3-a456-426614174300")
                     .dateRange(DateRange.builder()
                             .startDate(FIXED_DATE.plusDays(1 + i * 10))
                             .endDate(FIXED_DATE.plusDays(3 + i * 10))
@@ -259,7 +263,7 @@ class AuditIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("audit-time-test")
-                .userId(AUDIT_USER_1)
+                .userId("123e4567-e89b-12d3-a456-426614174300")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(1))
@@ -290,7 +294,7 @@ class AuditIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("audit-source-test")
-                .userId(AUDIT_USER_1)
+                .userId("123e4567-e89b-12d3-a456-426614174300")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(2))
@@ -318,7 +322,7 @@ class AuditIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("audit-timestamp-test")
-                .userId(AUDIT_USER_1)
+                .userId("123e4567-e89b-12d3-a456-426614174300")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(2))

@@ -129,18 +129,6 @@ class EmployeeTest {
     }
 
     @Test
-    void createFactoryMethodShouldThrowExceptionWhenNoExternalIdProvided() {
-        assertThrows(IllegalArgumentException.class,
-                () -> Employee.create(TEST_NAME, null, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
-    }
-
-    @Test
-    void createFactoryMethodShouldThrowExceptionWhenBothExternalIdsAreEmpty() {
-        assertThrows(IllegalArgumentException.class,
-                () -> Employee.create(TEST_NAME, "  ", "  ", TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
-    }
-
-    @Test
     void createFactoryMethodShouldThrowExceptionWhenDateOfJoiningIsInFuture() {
         assertThrows(IllegalArgumentException.class,
                 () -> Employee.create(TEST_NAME, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME,
@@ -188,21 +176,6 @@ class EmployeeTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> employee.update(null, TEST_SLACK_ID, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
-    }
-
-    @Test
-    void updateShouldThrowExceptionWhenNoExternalIdProvided() {
-        Employee employee = Employee.create(
-                TEST_NAME,
-                TEST_SLACK_ID,
-                null,
-                TEST_SLACK_DISPLAY_NAME,
-                TEST_DATE_OF_JOINING,
-                Region.PUNE
-        );
-
-        assertThrows(IllegalArgumentException.class,
-                () -> employee.update(TEST_NAME, null, null, TEST_SLACK_DISPLAY_NAME, TEST_DATE_OF_JOINING, Region.PUNE));
     }
 
     @Test

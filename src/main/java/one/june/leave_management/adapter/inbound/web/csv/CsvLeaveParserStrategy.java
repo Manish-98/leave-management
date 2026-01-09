@@ -2,8 +2,12 @@ package one.june.leave_management.adapter.inbound.web.csv;
 
 import com.opencsv.CSVReader;
 import lombok.extern.slf4j.Slf4j;
+import one.june.leave_management.application.employee.service.EmployeeService;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
+import one.june.leave_management.common.exception.EmployeeNotFoundException;
 import one.june.leave_management.common.model.DateRange;
+import one.june.leave_management.domain.employee.model.Employee;
+import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
@@ -24,12 +28,18 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 @Slf4j
 public class CsvLeaveParserStrategy implements CsvParserStrategy<LeaveIngestionCommand> {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private final EmployeeRepository employeeRepository;
+
+    public CsvLeaveParserStrategy(EmployeeRepository employeeRepository) {
+        this.employeeRepository = employeeRepository;
+    }
 
     /**
      * InputStream wrapper that skips BOM (Byte Order Mark) if present.
@@ -226,11 +236,14 @@ public class CsvLeaveParserStrategy implements CsvParserStrategy<LeaveIngestionC
         }
 
         // Extract and validate fields
-        String userId = getRequiredField(metadata, "userid", rowNumber);
+        String userIdentifier = getRequiredField(metadata, "userid", rowNumber);
         String startDateStr = getRequiredField(metadata, "startdate", rowNumber);
         String endDateStr = getRequiredField(metadata, "enddate", rowNumber);
         String typeStr = getRequiredField(metadata, "type", rowNumber);
         String durationTypeStr = metadata.getOrDefault("durationtype", "FULL_DAY");
+
+        // Resolve employee UUID from the identifier
+        String userId = resolveEmployeeUuid(userIdentifier, rowNumber);
 
         // Parse dates
         LocalDate start;
@@ -308,6 +321,56 @@ public class CsvLeaveParserStrategy implements CsvParserStrategy<LeaveIngestionC
             throw new CsvValidationException(fieldName + " is required", rowNumber);
         }
         return value.trim();
+    }
+
+    /**
+     * Resolves the employee UUID from an identifier in the CSV.
+     * The identifier can be:
+     * 1. A UUID string (internal employee ID)
+     * 2. A Slack ID
+     * 3. A Google ID
+     *
+     * @param identifier the user identifier from the CSV
+     * @param rowNumber the row number for error reporting
+     * @return the employee UUID as a string
+     * @throws CsvValidationException if the employee cannot be found
+     */
+    private String resolveEmployeeUuid(String identifier, int rowNumber) throws CsvValidationException {
+        if (identifier == null || identifier.trim().isEmpty()) {
+            throw new CsvValidationException("userid cannot be empty", rowNumber);
+        }
+
+        // Try parsing as UUID first (internal employee ID)
+        try {
+            UUID uuid = UUID.fromString(identifier.trim());
+            // Validate that employee exists with this UUID
+            if (employeeRepository.findById(uuid).isPresent()) {
+                log.debug("Resolved employee UUID: {} from identifier: {}", uuid, identifier);
+                return uuid.toString();
+            }
+        } catch (IllegalArgumentException e) {
+            // Not a UUID, continue to try external IDs
+            log.debug("Identifier '{}' is not a valid UUID, trying external IDs", identifier);
+        }
+
+        // Try finding by Slack ID
+        Employee employee = employeeRepository.findBySlackId(identifier.trim()).orElse(null);
+        if (employee != null) {
+            log.debug("Resolved employee UUID: {} from Slack ID: {}", employee.getId(), identifier);
+            return employee.getId().toString();
+        }
+
+        // Try finding by Google ID
+        employee = employeeRepository.findByGoogleId(identifier.trim()).orElse(null);
+        if (employee != null) {
+            log.debug("Resolved employee UUID: {} from Google ID: {}", employee.getId(), identifier);
+            return employee.getId().toString();
+        }
+
+        // Employee not found
+        throw new CsvValidationException(
+                String.format("Employee not found for userid: %s (must be a valid employee UUID, Slack ID, or Google ID)", identifier),
+                rowNumber);
     }
 
     /**

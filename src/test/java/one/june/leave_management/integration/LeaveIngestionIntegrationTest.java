@@ -173,7 +173,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest request = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-123")
-                .userId(EMPLOYEE_1_ID)
+                .userId("123e4567-e89b-12d3-a456-426614174100")  // Use employee UUID
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
@@ -189,7 +189,9 @@ class LeaveIngestionIntegrationTest {
 
         String responseBody = response.getBody();
         assertThat(responseBody).isNotNull();
-        assertThat(responseBody).contains("\"userId\":\"" + EMPLOYEE_1_ID + "\"");
+        // Check that employee object is present with slackId
+        assertThat(responseBody).contains("\"employee\":{");
+        assertThat(responseBody).contains("\"slackId\":\"U001\"");
         assertThat(responseBody).contains("\"type\":\"ANNUAL_LEAVE\"");
         assertThat(responseBody).contains("\"status\":\"REQUESTED\"");
         assertThat(responseBody).contains("\"durationType\":\"FULL_DAY\"");
@@ -220,7 +222,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest firstRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-update-test")
-                .userId(EMPLOYEE_2_ID)
+                .userId("123e4567-e89b-12d3-a456-426614174101")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(10))
                         .endDate(FIXED_DATE.plusDays(12))
@@ -251,7 +253,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-update-test") // Same sourceId
-                .userId(EMPLOYEE_2_ID)
+                .userId("123e4567-e89b-12d3-a456-426614174101")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(20))
                         .endDate(FIXED_DATE.plusDays(25))
@@ -290,7 +292,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest firstRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-overlap-1")
-                .userId(EMPLOYEE_OVERLAP)
+                .userId("123e4567-e89b-12d3-a456-426614174102")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(5))
                         .endDate(FIXED_DATE.plusDays(10))
@@ -307,7 +309,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.SLACK)
                 .sourceId("slack-overlap-2")
-                .userId(EMPLOYEE_OVERLAP) // Same user
+                .userId("123e4567-e89b-12d3-a456-426614174102") // Same user
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(8)) // Overlaps
                         .endDate(FIXED_DATE.plusDays(12))
@@ -330,7 +332,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest firstRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.WEB)
                 .sourceId("web-no-overlap-1")
-                .userId(EMPLOYEE_NO_OVERLAP)
+                .userId("123e4567-e89b-12d3-a456-426614174103")
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(1))
                         .endDate(FIXED_DATE.plusDays(3))
@@ -347,7 +349,7 @@ class LeaveIngestionIntegrationTest {
         LeaveIngestionRequest secondRequest = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.SLACK)
                 .sourceId("slack-no-overlap-2")
-                .userId(EMPLOYEE_NO_OVERLAP) // Same user
+                .userId("123e4567-e89b-12d3-a456-426614174103") // Same user
                 .dateRange(DateRange.builder()
                         .startDate(FIXED_DATE.plusDays(10)) // No overlap
                         .endDate(FIXED_DATE.plusDays(12))

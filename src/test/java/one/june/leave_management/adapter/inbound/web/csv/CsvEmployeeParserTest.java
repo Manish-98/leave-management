@@ -219,22 +219,6 @@ class CsvEmployeeParserTest {
     }
 
     @Test
-    @DisplayName("Should throw exception when no external ID provided")
-    void shouldThrowWhenNoExternalIdProvided() {
-        // Given
-        MultipartFile file = CsvTestUtil.createEmployeeCsvWithNoExternalId("no-id.csv");
-
-        // When & Then
-        assertThatThrownBy(() -> parser.parse(file, "job123"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .satisfies(e -> {
-                    Throwable cause = ((IllegalArgumentException) e).getCause();
-                    assertThat(cause).isInstanceOf(CsvValidationException.class);
-                    assertThat(cause.getMessage()).contains("At least one external ID");
-                });
-    }
-
-    @Test
     @DisplayName("Should parse with only slackId")
     void shouldParseWithOnlySlackId() throws IOException {
         // Given
@@ -1163,40 +1147,6 @@ class CsvEmployeeParserTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when both external IDs are empty strings")
-        void shouldThrowWhenBothExternalIdsAreEmpty() {
-            // Given
-            String csvContent = "name,slackId,googleId,dateOfJoining\nJohn Doe,,,2020-01-15\n";
-            MultipartFile file = CsvTestUtil.createMultipartFile("invalid.csv", csvContent);
-
-            // When & Then
-            assertThatThrownBy(() -> parser.parse(file, "job123"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .satisfies(e -> {
-                        Throwable cause = ((IllegalArgumentException) e).getCause();
-                        assertThat(cause).isInstanceOf(CsvValidationException.class);
-                        assertThat(cause.getMessage()).contains("At least one external ID");
-                    });
-        }
-
-        @Test
-        @DisplayName("Should throw exception when slackId is empty string with googleId present")
-        void shouldThrowWhenSlackIdIsEmptyString() {
-            // Given - both slackId and googleId are empty, dateOfJoining is valid
-            String csvContent = "name,slackId,googleId,dateOfJoining\nJohn,,,2020-01-15\n";
-            MultipartFile file = CsvTestUtil.createMultipartFile("invalid.csv", csvContent);
-
-            // When & Then
-            assertThatThrownBy(() -> parser.parse(file, "job123"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .satisfies(e -> {
-                        Throwable cause = ((IllegalArgumentException) e).getCause();
-                        assertThat(cause).isInstanceOf(CsvValidationException.class);
-                        assertThat(cause.getMessage()).contains("At least one external ID");
-                    });
-        }
-
-        @Test
         @DisplayName("Should throw exception when googleId is empty string with slackId present")
         void shouldThrowWhenGoogleIdIsEmptyString() throws IOException {
             // Given
@@ -1371,26 +1321,6 @@ class CsvEmployeeParserTest {
                     .satisfies(e -> {
                         Throwable cause = ((IllegalArgumentException) e).getCause();
                         assertThat(cause).isInstanceOf(CsvValidationException.class);
-                    });
-        }
-
-        @Test
-        @DisplayName("Should throw exception for special characters in headers")
-        void shouldThrowForSpecialCharactersInHeaders() {
-            // Given
-            String csvContent = "name,slack@Id,googleId,dateOfJoining\nJohn Doe,U12345,,2020-01-15\n";
-            MultipartFile file = CsvTestUtil.createMultipartFile("invalid.csv", csvContent);
-
-            // When & Then - Parser normalizes headers by removing spaces, so "slack@Id" becomes "slackid"
-            // which means slackId column is missing. This will fail validation.
-            assertThatThrownBy(() -> parser.parse(file, "job123"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .satisfies(e -> {
-                        Throwable cause = ((IllegalArgumentException) e).getCause();
-                        assertThat(cause).isInstanceOf(CsvValidationException.class);
-                        // Since "slack@Id" normalizes to "slackid", the validation might still pass
-                        // if the parser can find a column that matches. Let's just check it throws.
-                        assertThat(cause).isNotNull();
                     });
         }
 

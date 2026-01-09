@@ -2,6 +2,8 @@ package one.june.leave_management.adapter.inbound.web.csv;
 
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.common.model.DateRange;
+import one.june.leave_management.domain.employee.model.Employee;
+import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
@@ -11,25 +13,79 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 @DisplayName("CSV Leave Parser Unit Tests")
+@ExtendWith(MockitoExtension.class)
 class CsvLeaveParserTest {
+
+    @Mock
+    private EmployeeRepository employeeRepository;
 
     private CsvLeaveParserStrategy parser;
 
+    private final UUID testEmployeeUuid = UUID.randomUUID();
+
     @BeforeEach
     void setUp() {
-        parser = new CsvLeaveParserStrategy();
+        // Setup mock to resolve any string to a test employee
+        Employee testEmployee = Employee.builder()
+                .id(testEmployeeUuid)
+                .slackId("U12345")
+                .googleId("test@example.com")
+                .name("Test Employee")
+                .dateOfJoining(LocalDate.of(2020, 1, 1))
+                .build();
+
+        // Use Answer to conditionally return employee based on argument
+        org.mockito.Mockito.lenient().when(employeeRepository.findById(any(UUID.class))).thenAnswer(invocation -> {
+            UUID id = invocation.getArgument(0);
+            if (id.equals(testEmployeeUuid)) {
+                return Optional.of(testEmployee);
+            }
+            return Optional.empty();
+        });
+
+        org.mockito.Mockito.lenient().when(employeeRepository.findBySlackId(anyString())).thenAnswer(invocation -> {
+            String slackId = invocation.getArgument(0);
+            // Match all the test user IDs used in the test suite
+            // For "user" prefix patterns (user1, user2, etc.), always return the test employee
+            if (slackId.equals("U12345") ||
+                slackId.startsWith("user") ||
+                slackId.equals("user@#$") ||
+                slackId.equals("日本語") ||
+                slackId.equals("user,1")) {
+                return Optional.of(testEmployee);
+            }
+            return Optional.empty();
+        });
+
+        org.mockito.Mockito.lenient().when(employeeRepository.findByGoogleId(anyString())).thenAnswer(invocation -> {
+            String googleId = invocation.getArgument(0);
+            if (googleId.equals("test@example.com")) {
+                return Optional.of(testEmployee);
+            }
+            return Optional.empty();
+        });
+
+        parser = new CsvLeaveParserStrategy(employeeRepository);
     }
 
     @Test
@@ -38,7 +94,7 @@ class CsvLeaveParserTest {
         // Given
         List<CsvTestUtil.CsvLeaveRecord> records = List.of(
                 CsvTestUtil.CsvLeaveRecord.builder()
-                        .userId("user1")
+                        .userId("U12345") // Use Slack ID that resolves to test employee
                         .startDate("2024-01-01")
                         .endDate("2024-01-05")
                         .type("ANNUAL_LEAVE")
@@ -55,7 +111,7 @@ class CsvLeaveParserTest {
 
         // Then
         assertThat(commands).hasSize(1);
-        assertThat(commands.get(0).getUserId()).isEqualTo("user1");
+        assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString()); // Expect employee UUID
         assertThat(commands.get(0).getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
         assertThat(commands.get(0).getStatus()).isEqualTo(LeaveStatus.APPROVED);
         assertThat(commands.get(0).getDurationType()).isEqualTo(LeaveDurationType.FULL_DAY); // Default
@@ -79,7 +135,7 @@ class CsvLeaveParserTest {
 
         // Then
         assertThat(commands).hasSize(1);
-        assertThat(commands.get(0).getUserId()).isEqualTo("user1");
+        assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
         assertThat(commands.get(0).getDurationType()).isEqualTo(LeaveDurationType.FIRST_HALF);
         assertThat(commands.get(0).getSourceId()).isEqualTo("bulk-upload-job123-2");
     }
@@ -104,11 +160,11 @@ class CsvLeaveParserTest {
 
         // Then
         assertThat(commands).hasSize(3);
-        assertThat(commands.get(0).getUserId()).isEqualTo("user1");
+        assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
         assertThat(commands.get(0).getSourceId()).isEqualTo("bulk-upload-job123-2");
-        assertThat(commands.get(1).getUserId()).isEqualTo("user2");
+        assertThat(commands.get(1).getUserId()).isEqualTo(testEmployeeUuid.toString());
         assertThat(commands.get(1).getSourceId()).isEqualTo("bulk-upload-job123-3");
-        assertThat(commands.get(2).getUserId()).isEqualTo("user3");
+        assertThat(commands.get(2).getUserId()).isEqualTo(testEmployeeUuid.toString());
         assertThat(commands.get(2).getSourceId()).isEqualTo("bulk-upload-job123-4");
     }
 
@@ -156,7 +212,7 @@ class CsvLeaveParserTest {
 
         // Then
         assertThat(commands).hasSize(1);
-        assertThat(commands.get(0).getUserId()).isEqualTo("user1");
+        assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
     }
 
     @Test
@@ -175,7 +231,7 @@ class CsvLeaveParserTest {
 
         // Then
         assertThat(commands).hasSize(1);
-        assertThat(commands.get(0).getUserId()).isEqualTo("user1");
+        assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
     }
 
     @Test
@@ -357,7 +413,7 @@ class CsvLeaveParserTest {
 
         // Then
         assertThat(commands).hasSize(1);
-        assertThat(commands.get(0).getUserId()).isEqualTo("user1"); // Trimmed
+        assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString()); // Trimmed
         assertThat(commands.get(0).getType()).isEqualTo(LeaveType.ANNUAL_LEAVE); // Trimmed and uppercased
     }
 
@@ -744,7 +800,7 @@ class CsvLeaveParserTest {
 
             // Then
             assertThat(commands).hasSize(1);
-            assertThat(commands.get(0).getUserId()).isEqualTo("user1");
+            assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
         }
 
         @Test
@@ -1150,7 +1206,7 @@ class CsvLeaveParserTest {
 
             // Then
             assertThat(commands).hasSize(1);
-            assertThat(commands.get(0).getUserId()).isEqualTo("user@#$");
+            assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
         }
 
         @Test
@@ -1204,7 +1260,7 @@ class CsvLeaveParserTest {
 
             // Then
             assertThat(commands).hasSize(1);
-            assertThat(commands.get(0).getUserId()).isEqualTo("user,1");
+            assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
         }
 
         @Test
@@ -1224,7 +1280,7 @@ class CsvLeaveParserTest {
 
             // Then
             assertThat(commands).hasSize(1);
-            assertThat(commands.get(0).getUserId()).isEqualTo("日本語");
+            assertThat(commands.get(0).getUserId()).isEqualTo(testEmployeeUuid.toString());
         }
     }
 }

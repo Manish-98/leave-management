@@ -100,12 +100,11 @@ public class SlackLeaveRequestMapper {
         String slackUserId = SlackMetadataUtil.extractUserId(view.getPrivateMetadata());
         log.debug("Extracted Slack user ID from metadata: {}", slackUserId);
 
-        // Look up employee by Slack ID and use their UUID
+        // Validate that employee exists with this Slack ID and get the employee's UUID
         Employee employee = employeeRepository.findBySlackId(slackUserId)
                 .orElseThrow(() -> new SlackPayloadParseException(
                         String.format("Employee not found for Slack user ID: %s", slackUserId)));
-        String employeeUserId = employee.getId().toString();
-        log.debug("Mapped Slack user ID {} to employee ID: {}", slackUserId, employeeUserId);
+        log.debug("Found employee with UUID: {} for Slack user ID: {}", employee.getId(), slackUserId);
 
         // Extract leave type category (ANNUAL_LEAVE or OPTIONAL_HOLIDAY)
         String leaveTypeValue = getSelectedValue(stateValues, BLOCK_LEAVE_TYPE, ACTION_LEAVE_TYPE);
@@ -116,7 +115,7 @@ public class SlackLeaveRequestMapper {
         LeaveIngestionRequest.LeaveIngestionRequestBuilder builder = LeaveIngestionRequest.builder()
                 .sourceType(SourceType.SLACK)
                 .sourceId(view.getId()) // Will use view ID as source ID
-                .userId(employeeUserId) // Use employee UUID instead of Slack user ID
+                .userId(employee.getId().toString()) // Store employee's internal UUID
                 .type(leaveType)
                 .status(LeaveStatus.APPROVED);
 

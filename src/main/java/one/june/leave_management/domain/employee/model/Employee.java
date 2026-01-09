@@ -59,12 +59,6 @@ public class Employee {
             throw new IllegalArgumentException("region cannot be null");
         }
 
-        // At least one external ID is required
-        if ((slackId == null || slackId.trim().isEmpty()) &&
-            (googleId == null || googleId.trim().isEmpty())) {
-            throw new IllegalArgumentException("At least one external ID (slackId or googleId) is required");
-        }
-
         Employee employee = Employee.builder()
                 .name(name.trim())
                 .slackId(slackId != null ? slackId.trim() : null)
@@ -103,12 +97,6 @@ public class Employee {
         }
 
         this.name = name.trim();
-
-        // At least one external ID is required
-        if ((slackId == null || slackId.trim().isEmpty()) &&
-            (googleId == null || googleId.trim().isEmpty())) {
-            throw new IllegalArgumentException("At least one external ID (slackId or googleId) is required");
-        }
 
         this.slackId = slackId != null ? slackId.trim() : null;
         this.googleId = googleId != null ? googleId.trim() : null;
@@ -195,12 +183,6 @@ public class Employee {
         // Name validation
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("name cannot be null or empty");
-        }
-
-        // At least one external ID is required
-        if ((slackId == null || slackId.trim().isEmpty()) &&
-            (googleId == null || googleId.trim().isEmpty())) {
-            throw new IllegalArgumentException("At least one external ID (slackId or googleId) is required");
         }
 
         // Date of joining validation

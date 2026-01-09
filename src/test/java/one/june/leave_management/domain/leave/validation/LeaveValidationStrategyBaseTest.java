@@ -33,25 +33,40 @@ class LeaveValidationStrategyBaseTest {
 
     private TestValidationStrategy strategy;
 
-    private UUID validEmployeeId;
-    private String invalidUserId = "not-a-uuid";
-    private UUID nonExistentEmployeeId;
+    private UUID validEmployeeId = UUID.randomUUID();
+    private String nonExistentEmployeeId = "123e4567-e89b-12d3-a456-426614174999";
 
     @BeforeEach
     void setUp() {
         strategy = new TestValidationStrategy(employeeRepository);
-        validEmployeeId = UUID.randomUUID();
-        nonExistentEmployeeId = UUID.randomUUID();
     }
 
     @Test
-    @DisplayName("Should validate successfully when employee exists")
-    void shouldValidateWhenEmployeeExists() {
+    @DisplayName("Should validate successfully when employee exists with UUID")
+    void shouldValidateWhenEmployeeExistsWithSlackId() {
         // Given
         Leave leave = createValidLeave(validEmployeeId.toString());
 
-        when(employeeRepository.existsById(validEmployeeId))
-                .thenReturn(true);
+        when(employeeRepository.findById(validEmployeeId))
+                .thenReturn(Optional.of(one.june.leave_management.domain.employee.model.Employee.builder().id(validEmployeeId).build()));
+
+        // When
+        LeaveValidationResult result = strategy.validateBasicRequirements(leave);
+
+        // Then
+        assertThat(result.isValid()).isTrue();
+        assertThat(result.getErrors()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should validate successfully when employee exists with UUID")
+    void shouldValidateWhenEmployeeExistsWithGoogleId() {
+        // Given
+        UUID anotherEmployeeId = UUID.randomUUID();
+        Leave leave = createValidLeave(anotherEmployeeId.toString());
+
+        when(employeeRepository.findById(anotherEmployeeId))
+                .thenReturn(Optional.of(one.june.leave_management.domain.employee.model.Employee.builder().id(anotherEmployeeId).build()));
 
         // When
         LeaveValidationResult result = strategy.validateBasicRequirements(leave);
@@ -65,10 +80,10 @@ class LeaveValidationStrategyBaseTest {
     @DisplayName("Should fail validation when employee does not exist")
     void shouldFailValidationWhenEmployeeNotExists() {
         // Given
-        Leave leave = createValidLeave(nonExistentEmployeeId.toString());
+        Leave leave = createValidLeave(nonExistentEmployeeId);
 
-        when(employeeRepository.existsById(nonExistentEmployeeId))
-                .thenReturn(false);
+        when(employeeRepository.findById(UUID.fromString(nonExistentEmployeeId)))
+                .thenReturn(Optional.empty());
 
         // When
         LeaveValidationResult result = strategy.validateBasicRequirements(leave);
@@ -78,24 +93,7 @@ class LeaveValidationStrategyBaseTest {
         assertThat(result.getErrors()).hasSize(1);
         assertThat(result.getErrors().get(0))
                 .startsWith("Employee not found with ID: ")
-                .contains(nonExistentEmployeeId.toString());
-    }
-
-    @Test
-    @DisplayName("Should fail validation when userId has invalid UUID format")
-    void shouldFailValidationWhenUserIdHasInvalidFormat() {
-        // Given
-        Leave leave = createValidLeave(invalidUserId);
-
-        // When
-        LeaveValidationResult result = strategy.validateBasicRequirements(leave);
-
-        // Then
-        assertThat(result.isValid()).isFalse();
-        assertThat(result.getErrors()).hasSize(1);
-        assertThat(result.getErrors().get(0))
-                .startsWith("Invalid user ID format: ")
-                .contains(invalidUserId);
+                .contains(nonExistentEmployeeId);
     }
 
     @Test
@@ -154,7 +152,7 @@ class LeaveValidationStrategyBaseTest {
     void shouldCheckEmployeeExistenceWhenOtherValidationsPass() {
         // Given - all basic validations pass, but employee doesn't exist
         Leave leave = Leave.builder()
-                .userId(nonExistentEmployeeId.toString())
+                .userId(nonExistentEmployeeId)
                 .type(LeaveType.ANNUAL_LEAVE)
                 .durationType(LeaveDurationType.FULL_DAY)
                 .status(LeaveStatus.REQUESTED)
@@ -165,8 +163,8 @@ class LeaveValidationStrategyBaseTest {
                 .sourceRefs(List.of(createSourceRef()))
                 .build();
 
-        when(employeeRepository.existsById(nonExistentEmployeeId))
-                .thenReturn(false);
+        when(employeeRepository.findById(UUID.fromString(nonExistentEmployeeId)))
+                .thenReturn(Optional.empty());
 
         // When
         LeaveValidationResult result = strategy.validateBasicRequirements(leave);
@@ -176,7 +174,7 @@ class LeaveValidationStrategyBaseTest {
         assertThat(result.getErrors()).hasSize(1);
         assertThat(result.getErrors().get(0))
                 .startsWith("Employee not found with ID: ")
-                .contains(nonExistentEmployeeId.toString());
+                .contains(nonExistentEmployeeId);
     }
 
     // Helper methods

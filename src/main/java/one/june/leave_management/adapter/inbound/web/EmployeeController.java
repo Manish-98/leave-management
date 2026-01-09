@@ -86,6 +86,7 @@ public class EmployeeController {
                 .googleId(request.getGoogleId())
                 .slackDisplayName(request.getSlackDisplayName())
                 .dateOfJoining(request.getDateOfJoining())
+                .region(request.getRegion())
                 .active(request.getActive())
                 .carryForwardLeaves(request.getCarryForwardLeaves())
                 .build();
@@ -264,6 +265,7 @@ public class EmployeeController {
                 .googleId(request.getGoogleId())
                 .slackDisplayName(request.getSlackDisplayName())
                 .dateOfJoining(request.getDateOfJoining())
+                .region(request.getRegion())
                 .active(request.getActive())
                 .carryForwardLeaves(request.getCarryForwardLeaves())
                 .build();
