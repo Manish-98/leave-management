@@ -2,6 +2,8 @@ package one.june.leave_management.adapter.inbound.slack.mapper;
 
 import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionValue;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewSubmissionRequest;
+import one.june.leave_management.application.genai.dto.ParsedLeaveRequest;
+import one.june.leave_management.application.genai.util.GenAiTestFixtures;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
 import one.june.leave_management.common.exception.SlackPayloadParseException;
 import one.june.leave_management.common.model.DateRange;
@@ -14,6 +16,7 @@ import one.june.leave_management.domain.leave.model.OptionalHoliday;
 import one.june.leave_management.domain.leave.model.SourceType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -260,5 +263,320 @@ class SlackLeaveRequestMapperTest {
         SlackBlockActionValue actionValue = new SlackBlockActionValue();
         actionValue.setValue(text);
         return actionValue;
+    }
+
+    @Nested
+    @DisplayName("AI-Parsed Request Mapping Tests")
+    class AiParsedRequestMappingTests {
+
+        @Test
+        @DisplayName("Should map ParsedLeaveRequest to LeaveIngestionRequest successfully")
+        void shouldMapParsedLeaveRequestSuccessfully() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getUserId()).isEqualTo(testEmployeeId.toString());
+            assertThat(result.getSourceType()).isEqualTo(SourceType.SLACK);
+            assertThat(result.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
+            assertThat(result.getStatus()).isEqualTo(LeaveStatus.REQUESTED); // AI requests start as REQUESTED
+            assertThat(result.getDateRange().getStartDate()).isEqualTo(GenAiTestFixtures.TOMORROW);
+            assertThat(result.getDateRange().getEndDate()).isEqualTo(GenAiTestFixtures.TOMORROW);
+            assertThat(result.getDurationType()).isEqualTo(LeaveDurationType.FULL_DAY);
+            assertThat(result.getSourceId()).startsWith("slack-ai-");
+
+            verify(employeeRepository).findBySlackId(testSlackUserId);
+        }
+
+        @Test
+        @DisplayName("Should throw exception when Slack user ID is null")
+        void shouldThrowExceptionWhenSlackUserIdIsNull() {
+            // Given
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(GenAiTestFixtures.TOMORROW)
+                    .endDate(GenAiTestFixtures.TOMORROW)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .slackUserId(null)
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> mapper.toLeaveIngestionRequest(parsedRequest))
+                    .isInstanceOf(SlackPayloadParseException.class)
+                    .hasMessageContaining("Slack user ID is required");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when Slack user ID is blank")
+        void shouldThrowExceptionWhenSlackUserIdIsBlank() {
+            // Given
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(GenAiTestFixtures.TOMORROW)
+                    .endDate(GenAiTestFixtures.TOMORROW)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .slackUserId("  ")
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> mapper.toLeaveIngestionRequest(parsedRequest))
+                    .isInstanceOf(SlackPayloadParseException.class)
+                    .hasMessageContaining("Slack user ID is required");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when employee not found for Slack user ID")
+        void shouldThrowExceptionWhenEmployeeNotFoundForSlackId() {
+            // Given
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(GenAiTestFixtures.TOMORROW)
+                    .endDate(GenAiTestFixtures.TOMORROW)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .slackUserId(testSlackUserId)
+                    .build();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.empty());
+
+            // When & Then
+            assertThatThrownBy(() -> mapper.toLeaveIngestionRequest(parsedRequest))
+                    .isInstanceOf(SlackPayloadParseException.class)
+                    .hasMessageContaining("Employee not found for Slack user ID")
+                    .hasMessageContaining(testSlackUserId);
+
+            verify(employeeRepository).findBySlackId(testSlackUserId);
+        }
+
+        @Test
+        @DisplayName("Should map date range correctly")
+        void shouldMapDateRangeCorrectly() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createDateRangeLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getDateRange().getStartDate()).isEqualTo(GenAiTestFixtures.CHRISTMAS_DAY);
+            assertThat(result.getDateRange().getEndDate()).isEqualTo(GenAiTestFixtures.BOXING_DAY);
+        }
+
+        @Test
+        @DisplayName("Should map leave type correctly")
+        void shouldMapLeaveTypeCorrectly() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createSimpleLeaveRequest();
+            parsedRequest.setLeaveType(LeaveType.ANNUAL_LEAVE);
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
+        }
+
+        @Test
+        @DisplayName("Should map OPTIONAL_HOLIDAY leave type")
+        void shouldMapOptionalHolidayLeaveType() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createOptionalHolidayRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getType()).isEqualTo(LeaveType.OPTIONAL_HOLIDAY);
+        }
+
+        @Test
+        @DisplayName("Should default duration type to FULL_DAY when null")
+        void shouldDefaultDurationTypeToFullDayWhenNull() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(GenAiTestFixtures.TOMORROW)
+                    .endDate(GenAiTestFixtures.TOMORROW)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .durationType(null) // Null duration type
+                    .slackUserId(testSlackUserId)
+                    .build();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getDurationType()).isEqualTo(LeaveDurationType.FULL_DAY);
+        }
+
+        @Test
+        @DisplayName("Should map FIRST_HALF duration type")
+        void shouldMapFirstHalfDurationType() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createHalfDayLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getDurationType()).isEqualTo(LeaveDurationType.FIRST_HALF);
+        }
+
+        @Test
+        @DisplayName("Should set status to REQUESTED for AI-parsed requests")
+        void shouldSetStatusToRequestedForAiParsedRequests() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getStatus()).isEqualTo(LeaveStatus.REQUESTED);
+        }
+
+        @Test
+        @DisplayName("Should set source type to SLACK")
+        void shouldSetSourceTypeToSlack() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getSourceType()).isEqualTo(SourceType.SLACK);
+        }
+
+        @Test
+        @DisplayName("Should generate unique source ID with timestamp")
+        void shouldGenerateUniqueSourceIdWithTimestamp() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getSourceId()).startsWith("slack-ai-");
+            assertThat(result.getSourceId()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should use employee UUID as user ID")
+        void shouldUseEmployeeUuidAsUserId() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result.getUserId()).isEqualTo(testEmployeeId.toString());
+            assertThat(result.getUserId()).isNotEqualTo(testSlackUserId);
+        }
+
+        @Test
+        @DisplayName("Should handle minimal fields successfully")
+        void shouldHandleMinimalFieldsSuccessfully() {
+            // Given
+            Employee employee = Employee.builder()
+                    .id(testEmployeeId)
+                    .slackId(testSlackUserId)
+                    .build();
+
+            ParsedLeaveRequest parsedRequest = GenAiTestFixtures.createMinimalLeaveRequest();
+
+            when(employeeRepository.findBySlackId(testSlackUserId))
+                    .thenReturn(Optional.of(employee));
+
+            // When
+            var result = mapper.toLeaveIngestionRequest(parsedRequest);
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getDurationType()).isEqualTo(LeaveDurationType.FULL_DAY); // Default
+            assertThat(result.getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
+        }
     }
 }

@@ -1,5 +1,8 @@
 package one.june.leave_management.adapter.inbound.slack;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackAction;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest;
@@ -20,12 +23,15 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.SlackSectionBlock;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackOption;
 import one.june.leave_management.adapter.outbound.slack.dto.blocks.elements.SlackStaticSelectElement;
+import one.june.leave_management.application.genai.dto.ParseResult;
+import one.june.leave_management.application.genai.dto.ParsedLeaveRequest;
+import one.june.leave_management.application.genai.service.LeaveParsingService;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveService;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
+import one.june.leave_management.common.async.AsyncUtility;
 import one.june.leave_management.common.mapper.LeaveMapper;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,23 +64,29 @@ public class SlackLeaveOrchestrator {
     private final SlackApiClient slackApiClient;
     private final OptionalHolidayService optionalHolidayService;
     private final SlackLeaveRequestMapper slackLeaveRequestMapper;
+    private final LeaveParsingService leaveParsingService;
+    private final AsyncUtility asyncUtility;
 
     public SlackLeaveOrchestrator(
             LeaveService leaveService,
             LeaveMapper leaveMapper,
             SlackApiClient slackApiClient,
             OptionalHolidayService optionalHolidayService,
-            SlackLeaveRequestMapper slackLeaveRequestMapper
+            SlackLeaveRequestMapper slackLeaveRequestMapper,
+            LeaveParsingService leaveParsingService,
+            AsyncUtility asyncUtility
     ) {
         this.leaveService = leaveService;
         this.leaveMapper = leaveMapper;
         this.slackApiClient = slackApiClient;
         this.optionalHolidayService = optionalHolidayService;
         this.slackLeaveRequestMapper = slackLeaveRequestMapper;
+        this.leaveParsingService = leaveParsingService;
+        this.asyncUtility = asyncUtility;
     }
 
     /**
-     * Asynchronously processes a leave request from Slack and posts the result to the thread
+     * Processes a leave request from Slack and posts the result to the thread
      * <p>
      * This method:
      * 1. Converts the request to a command
@@ -82,16 +94,16 @@ public class SlackLeaveOrchestrator {
      * 3. Posts a success message to the Slack thread if successful
      * 4. Posts a failure message to the Slack thread if an error occurs
      * <p>
-     * Runs in a separate thread (@Async) with a new transaction (@Transactional REQUIRES_NEW).
+     * Runs with a new transaction (@Transactional REQUIRES_NEW).
+     * Should be called asynchronously via AsyncUtility.
      *
      * @param leaveRequest The leave request from the modal
      * @param channelId    The channel ID where to post updates
      * @param threadTs     The thread timestamp for posting threaded replies
      * @param userId       The Slack user ID for tagging the user
      */
-    @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void processLeaveRequestAsync(
+    public void processLeaveRequest(
             LeaveIngestionRequest leaveRequest,
             String channelId,
             String threadTs,
@@ -144,14 +156,17 @@ public class SlackLeaveOrchestrator {
      * <p>
      * This message serves as the anchor for all subsequent updates about the leave request.
      *
-     * @param channelId The channel ID where the message will be posted
-     * @param userTag   The Slack user tag (e.g., "&lt;@U12345&gt;")
+     * @param channelId   The channel ID where the message will be posted
+     * @param threadTs    The thread timestamp to reply to
+     * @param userTag     The Slack user tag (e.g., "&lt;@U12345&gt;")
+     * @param status      The status message to display
+     * @param originalText The original leave request text (optional, can be null)
      * @return The response containing the message timestamp (thread_ts), or null if posting fails
      */
-    public SlackMessageResponse postThreadAnchorMessage(String channelId, String userTag) {
+    public SlackMessageResponse postThreadAnchorMessage(String channelId, String threadTs, String userTag, String status, String originalText) {
         try {
             SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated(
-                    channelId, userTag
+                    channelId, threadTs, userTag, status, originalText
             );
 
             return slackApiClient.postMessage(channelId, message);
@@ -182,6 +197,25 @@ public class SlackLeaveOrchestrator {
 
         } catch (Exception e) {
             log.error("Failed to post cancellation message to thread", e);
+        }
+    }
+
+    /**
+     * Updates an existing message (typically to remove buttons after they've been clicked)
+     * <p>
+     * This is a best-effort operation - failures are logged but don't throw exceptions.
+     *
+     * @param channelId   The channel ID where the message exists
+     * @param messageTs   The timestamp of the message to update
+     * @param newMessage  The new message content
+     */
+    private void updateConfirmationMessage(String channelId, String messageTs, SlackMessageRequest newMessage) {
+        try {
+            slackApiClient.updateMessage(channelId, messageTs, newMessage);
+            log.info("Successfully updated confirmation message");
+        } catch (Exception e) {
+            log.error("Failed to update confirmation message", e);
+            // Don't throw - the button action should still proceed even if update fails
         }
     }
 
@@ -228,12 +262,12 @@ public class SlackLeaveOrchestrator {
         log.info("Mapped to leave request: {}", leaveRequest);
 
         // Trigger async leave processing with thread context
-        processLeaveRequestAsync(
+        asyncUtility.executeAsync(() -> processLeaveRequest(
                 leaveRequest,
                 channelId,
                 threadTs,
                 userId
-        );
+        ));
 
         log.info("Triggered async leave processing");
     }
@@ -282,15 +316,16 @@ public class SlackLeaveOrchestrator {
     /**
      * Handles block_actions events from Slack interactions endpoint
      * <p>
-     * This method is called when a user interacts with a block element
-     * that has dispatch_action=true (e.g., changing leave type selection).
+     * This method is called when a user interacts with a block element.
+     * It handles two types of containers:
      * <p>
-     * Flow:
-     * 1. Parses the block action request from form-encoded payload
-     * 2. Extracts the selected leave type from the action
-     * 3. Extracts view_id, view.hash, external_id, and private_metadata from the request
-     * 4. Reconstructs modal based on selected leave type
-     * 5. Updates the modal using Slack views.update API with hash validation
+     * 1. View-based actions (from modal interactions):
+     * - Triggered when user changes leave type selection
+     * - Flow: Parse → Extract leave type → Rebuild modal → Update modal
+     * <p>
+     * 2. Message-based actions (from button clicks):
+     * - Triggered when user clicks Confirm/Edit buttons in confirmation message
+     * - Flow: Parse → Route based on action ID → Handle Confirm or Edit
      * <p>
      * This method is called by the controller after signature verification.
      * <p>
@@ -308,19 +343,80 @@ public class SlackLeaveOrchestrator {
                 SlackBlockActionRequest.class
         );
 
-        log.info("Block action from user: {}, view ID: {}",
+        log.info("Block action from user: {}, container type: {}",
                 blockActionRequest.getUser().getId(),
-                blockActionRequest.getContainer().getViewId());
+                blockActionRequest.getContainer().getType());
 
         // Extract the action that triggered this event
-        // The first action should be the leave type selection
         if (blockActionRequest.getActions() == null || blockActionRequest.getActions().isEmpty()) {
             log.error("No actions found in block action request");
             throw new RuntimeException("No actions found in block action request");
         }
 
         SlackAction action = blockActionRequest.getActions().get(0);
+        String actionId = action.getActionId();
+        log.info("Action ID: {}", actionId);
 
+        // Route based on container type
+        String containerType = blockActionRequest.getContainer().getType();
+
+        if ("message".equals(containerType)) {
+            // Handle message-based button actions (Confirm/Edit buttons)
+            log.info("Handling message-based button action");
+            handleMessageButtonAction(blockActionRequest, action);
+        } else if ("view".equals(containerType)) {
+            // Handle view-based actions (modal interactions)
+            log.info("Handling view-based action");
+            handleViewBlockAction(blockActionRequest, action);
+        } else {
+            log.warn("Unknown container type: {}", containerType);
+            throw new RuntimeException("Unknown container type: " + containerType);
+        }
+    }
+
+    /**
+     * Handles message-based button actions from confirmation messages.
+     * <p>
+     * This routes to:
+     * - confirm_leave_action → Create leave directly
+     * - edit_leave_action → Open modal with pre-filled data
+     *
+     * @param blockActionRequest The block action request
+     * @param action             The action that was triggered
+     */
+    private void handleMessageButtonAction(SlackBlockActionRequest blockActionRequest, SlackAction action) {
+        String actionId = action.getActionId();
+
+        if ("confirm_leave_action".equals(actionId)) {
+            log.info("Handling confirm leave action");
+            handleConfirmLeaveAction(blockActionRequest, action);
+        } else if ("edit_leave_action".equals(actionId)) {
+            log.info("Handling edit leave action");
+            handleEditLeaveAction(blockActionRequest, action);
+        } else if ("open_modal_action".equals(actionId)) {
+            log.info("Handling open modal action");
+            handleOpenModalAction(blockActionRequest, action);
+        } else {
+            log.warn("Unknown message button action ID: {}", actionId);
+            throw new RuntimeException("Unknown message button action ID: " + actionId);
+        }
+    }
+
+    /**
+     * Handles view-based block actions from modal interactions.
+     * <p>
+     * This is triggered when user changes leave type selection in the modal.
+     * <p>
+     * Flow:
+     * 1. Extracts the selected leave type from the action
+     * 2. Extracts view_id, view.hash, and private_metadata from the request
+     * 3. Reconstructs modal based on selected leave type
+     * 4. Updates the modal using Slack views.update API with hash validation
+     *
+     * @param blockActionRequest The block action request
+     * @param action             The action that was triggered
+     */
+    private void handleViewBlockAction(SlackBlockActionRequest blockActionRequest, SlackAction action) {
         // Verify this is the leave type category action
         if (!"leave_type_category_action".equals(action.getActionId())) {
             log.warn("Received block action for unexpected action_id: {}. Expected: leave_type_category_action",
@@ -402,34 +498,98 @@ public class SlackLeaveOrchestrator {
                 commandRequest.getUserId(),
                 commandRequest.getChannelName());
 
-        // Create user tag for mentioning the user
-        String userTag = "<@" + commandRequest.getUserId() + ">";
+        // Check if command has accompanying text for AI parsing
+        String commandText = commandRequest.getText();
+        if (commandText != null && !commandText.isBlank()) {
+            log.info("Command has text for AI parsing: {}", commandText);
 
-        // Post thread anchor message to channel
-        log.info("Posting thread anchor message to channel: {}", commandRequest.getChannelId());
-        SlackMessageResponse messageResponse = postThreadAnchorMessage(
-                commandRequest.getChannelId(),
-                userTag
-        );
-
-        // Extract thread timestamp from response
-        String threadTs = messageResponse != null ? messageResponse.getTs() : null;
-        log.info("Posted thread anchor message with timestamp: {}", threadTs);
-
-        // Trigger modal opening asynchronously with thread context
-        log.info("Triggering modal opening asynchronously for trigger_id: {}", commandRequest.getTriggerId());
-        openLeaveApplicationModalAsync(commandRequest, threadTs);
+            // Handle command with text - route to AI parsing flow
+            handleSlashCommandWithText(commandRequest, commandText);
+        } else {
+            // Handle command without text - use traditional modal flow
+            log.info("No text provided, using traditional modal flow");
+            handleSlashCommandWithoutText(commandRequest);
+        }
 
         log.info("Successfully initiated slash command workflow");
     }
 
     /**
-     * Opens a leave application modal asynchronously
+     * Handles slash command with accompanying text for AI-powered parsing.
+     * <p>
+     * This method:
+     * 1. Posts a thread anchor message to get a timestamp (includes original text)
+     * 2. Uses that timestamp for all subsequent threaded replies
+     * 3. Parses the text using LeaveParsingService
+     * 4. Shows a confirmation dialog with parsed data
+     *
+     * @param commandRequest The parsed slash command request
+     * @param text           The text after the slash command
+     */
+    private void handleSlashCommandWithText(SlackCommandRequest commandRequest, String text) {
+        String userTag = "<@" + commandRequest.getUserId() + ">";
+
+        // Post thread anchor message to get a timestamp for threading
+        log.info("Posting thread anchor message for AI-powered leave request");
+        SlackMessageResponse anchorResponse = postThreadAnchorMessage(
+                commandRequest.getChannelId(),
+                null,  // No thread_ts yet - this becomes the anchor
+                userTag,
+                "Parsing your leave request with AI...",
+                text  // Include original text in the anchor message
+        );
+
+        // Get the timestamp of the anchor message
+        String threadTs = (anchorResponse != null) ? anchorResponse.getTs() : null;
+
+        if (threadTs == null) {
+            log.error("Failed to get thread anchor timestamp, messages may not be threaded");
+        }
+
+        // Trigger AI parsing and confirmation dialog asynchronously with thread context
+        log.info("Triggering AI parsing with thread_ts: {}", threadTs);
+        asyncUtility.executeAsync(() -> parseAndConfirmLeave(
+                commandRequest, text, threadTs
+        ));
+    }
+
+    /**
+     * Handles slash command without text - uses traditional modal flow.
+     *
+     * @param commandRequest The parsed slash command request
+     */
+    private void handleSlashCommandWithoutText(SlackCommandRequest commandRequest) {
+        // Create user tag for mentioning the user
+        String userTag = "<@" + commandRequest.getUserId() + ">";
+
+        // Open modal IMMEDIATELY and SYNCHRONOUSLY (trigger_id expires after 3 seconds!)
+        log.info("Opening modal immediately with trigger_id: {}", commandRequest.getTriggerId());
+        openLeaveApplicationModal(commandRequest, commandRequest.getMessageTs());
+
+        // Send initiation message as threaded reply ASYNCHRONOUSLY (don't delay modal opening)
+        asyncUtility.executeAsync(() -> {
+            try {
+                SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated(
+                        commandRequest.getChannelId(),
+                        commandRequest.getMessageTs(),  // Use as thread_ts
+                        userTag,
+                        "Opening leave request modal...",
+                        null  // No original text for modal flow
+                );
+                slackApiClient.postMessage(commandRequest.getChannelId(), message);
+            } catch (Exception e) {
+                log.error("Failed to post initiation message", e);
+            }
+        });
+    }
+
+    /**
+     * Opens a leave application modal
      * <p>
      * This method builds a modal with form fields for leave application
      * and opens it in Slack using the trigger_id from the slash command.
-     * It runs asynchronously to avoid blocking the HTTP response../
      * <p>
+     * Should be called asynchronously via AsyncUtility to avoid blocking the HTTP response.
      * The async nature is important because:
      * - Slack requires a response within 3 seconds
      * - The modal opening is independent of the ACK response
@@ -438,8 +598,7 @@ public class SlackLeaveOrchestrator {
      * @param slackRequest The parsed Slack command request containing trigger_id
      * @param threadTs     The thread timestamp for posting updates later
      */
-    @Async
-    public void openLeaveApplicationModalAsync(SlackCommandRequest slackRequest, String threadTs) {
+    public void openLeaveApplicationModal(SlackCommandRequest slackRequest, String threadTs) {
         try {
             log.info("Building and opening leave application modal for user: {}, thread_ts: {}",
                     slackRequest.getUserId(), threadTs);
@@ -696,6 +855,608 @@ public class SlackLeaveOrchestrator {
 
         // Add Holiday dropdown (populated from database)
         // Shows format: "YYYY-MM-DD - Holiday Name"
+        blocks.add(SlackBlockBuilder.staticSelectInput(
+                "holiday_select_block",
+                "holiday_select_action",
+                "Select Holiday",
+                holidayOptions,
+                "Choose a holiday from the list",
+                null // no initial selection
+        ));
+
+        // Create JSON metadata with thread context
+        String metadataJson = SlackMetadataUtil.createMetadata(
+                slackRequest.getUserId(),
+                slackRequest.getChannelId(),
+                slackRequest.getChannelName(),
+                threadTs
+        );
+
+        return SlackModalBuilder.create("Optional Holiday", "leave_application_submit")
+                .withBlocks(blocks)
+                .withPrivateMetadata(metadataJson)
+                .build();
+    }
+
+    /**
+     * Parses leave text and shows confirmation dialog.
+     * <p>
+     * This method:
+     * 1. Calls LeaveParsingService to parse the natural language text
+     * 2. Shows a confirmation message with Confirm/Edit buttons
+     * 3. On Confirm: Creates leave directly
+     * 4. On Edit or failure: Opens the modal with pre-filled data
+     * <p>
+     * Should be called asynchronously via AsyncUtility.
+     *
+     * @param commandRequest The parsed Slack command request
+     * @param text           The natural language text to parse
+     * @param threadTs       The thread timestamp for posting updates
+     */
+    public void parseAndConfirmLeave(SlackCommandRequest commandRequest, String text, String threadTs) {
+        try {
+            log.info("Parsing leave text: {}", text);
+
+            // Parse the text using AI (synchronous call) - pass Slack user ID
+            ParseResult parseResult = leaveParsingService.parseLeaveRequest(text, commandRequest.getUserId());
+
+            if (parseResult.isSuccess() && parseResult.getParsedRequest() != null) {
+                log.info("Successfully parsed leave request with confidence: {}",
+                        parseResult.getConfidenceScore());
+
+                // Show confirmation dialog with parsed data
+                showConfirmationDialog(commandRequest, parseResult, threadTs);
+            } else {
+                log.warn("Failed to parse leave request: {}",
+                        parseResult.getErrorMessage());
+
+                // Show error and offer to open modal
+                showParsingErrorAndOfferModal(commandRequest, parseResult.getErrorMessage(), threadTs);
+            }
+
+        } catch (Exception e) {
+            log.error("Unexpected error in parseAndConfirmLeaveAsync", e);
+
+            // Show error and offer to open modal
+            showParsingErrorAndOfferModal(commandRequest, e.getMessage(), threadTs);
+        }
+    }
+
+    /**
+     * Parses and confirms a leave request using AI (for slash command with text)
+     * <p>
+     * Uses response_url for all messages to keep them threaded with the original command.
+     * <p>
+     * Flow:
+     * 1. Parses text using AI
+     * 2. Shows confirmation dialog with Confirm/Edit buttons
+     * 3. On Confirm: Creates leave directly
+     * 4. On Edit or failure: Opens the modal with pre-filled data
+     * <p>
+     * Should be called asynchronously via AsyncUtility.
+     *
+     * @param commandRequest The parsed Slack command request
+     * @param text           The natural language text to parse
+     * @param responseUrl    The response_url for posting threaded messages
+     */
+    public void parseAndConfirmLeaveWithResponseUrl(SlackCommandRequest commandRequest, String text, String responseUrl) {
+        try {
+            log.info("Parsing leave text: {}", text);
+
+            // Parse the text using AI (synchronous call) - pass Slack user ID
+            ParseResult parseResult = leaveParsingService.parseLeaveRequest(text, commandRequest.getUserId());
+
+            if (parseResult.isSuccess() && parseResult.getParsedRequest() != null) {
+                log.info("Successfully parsed leave request with confidence: {}",
+                        parseResult.getConfidenceScore());
+
+                // Show confirmation dialog with parsed data using response_url
+                showConfirmationDialogViaResponseUrl(commandRequest, parseResult, responseUrl);
+            } else {
+                log.warn("Failed to parse leave request: {}",
+                        parseResult.getErrorMessage());
+
+                // Show error and offer to open modal using response_url
+                showParsingErrorAndOfferModalViaResponseUrl(commandRequest, parseResult.getErrorMessage(), responseUrl);
+            }
+
+        } catch (Exception e) {
+            log.error("Unexpected error in parseAndConfirmLeaveWithResponseUrl", e);
+
+            // Show error and offer to open modal using response_url
+            showParsingErrorAndOfferModalViaResponseUrl(commandRequest, e.getMessage(), responseUrl);
+        }
+    }
+
+    /**
+     * Shows a confirmation dialog with the parsed leave data.
+     * <p>
+     * Posts a message with:
+     * - Summary of parsed leave details
+     * - Confirm button to create leave directly
+     * - Edit button to open modal with pre-filled data
+     *
+     * @param commandRequest The parsed Slack command request
+     * @param parseResult    The parsing result containing leave details
+     * @param threadTs       The thread timestamp for posting updates
+     */
+    private void showConfirmationDialog(
+            SlackCommandRequest commandRequest,
+            ParseResult parseResult,
+            String threadTs
+    ) {
+        try {
+            ParsedLeaveRequest request = parseResult.getParsedRequest();
+
+            // Build confirmation message with leave details
+            String confirmationText = buildConfirmationMessage(request);
+
+            // Build message with Confirm/Edit buttons
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    commandRequest.getChannelId(),
+                    threadTs,
+                    commandRequest.getUserId(),
+                    confirmationText,
+                    request // Store parsed request in metadata for button handlers
+            );
+
+            // Post confirmation message
+            slackApiClient.postThreadReply(commandRequest.getChannelId(), threadTs, message);
+            log.info("Successfully posted confirmation dialog");
+
+        } catch (Exception e) {
+            log.error("Failed to show confirmation dialog", e);
+
+            // Fallback: Open modal with error message
+            asyncUtility.executeAsync(() -> openLeaveApplicationModal(commandRequest, threadTs));
+        }
+    }
+
+    /**
+     * Shows parsing error and offers to open modal.
+     *
+     * @param commandRequest The parsed Slack command request
+     * @param errorMessage  The error message to display
+     * @param threadTs      The thread timestamp for posting updates
+     */
+    private void showParsingErrorAndOfferModal(
+            SlackCommandRequest commandRequest,
+            String errorMessage,
+            String threadTs
+    ) {
+        try {
+            // Post error message with button to open modal
+            SlackMessageRequest message = SlackMessageTemplate.leaveParsingError(
+                    commandRequest.getChannelId(),
+                    threadTs,
+                    commandRequest.getUserId(),
+                    errorMessage
+            );
+
+            slackApiClient.postThreadReply(commandRequest.getChannelId(), threadTs, message);
+            log.info("Successfully posted parsing error message");
+
+        } catch (Exception e) {
+            log.error("Failed to show parsing error", e);
+
+            // Fallback: Just open the modal
+            asyncUtility.executeAsync(() -> openLeaveApplicationModal(commandRequest, threadTs));
+        }
+    }
+
+    /**
+     * Shows a confirmation dialog with the parsed leave data using response_url.
+     * <p>
+     * Posts a message with:
+     * - Summary of parsed leave details
+     * - Confirm button to create leave directly
+     * - Edit button to open modal with pre-filled data
+     *
+     * @param commandRequest The parsed Slack command request
+     * @param parseResult    The parsing result containing leave details
+     * @param responseUrl    The response_url for posting threaded messages
+     */
+    private void showConfirmationDialogViaResponseUrl(
+            SlackCommandRequest commandRequest,
+            ParseResult parseResult,
+            String responseUrl
+    ) {
+        try {
+            ParsedLeaveRequest request = parseResult.getParsedRequest();
+
+            // Build confirmation message with leave details
+            String confirmationText = buildConfirmationMessage(request);
+
+            // Build message with Confirm/Edit buttons (no channel/threadTs needed for response_url)
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    null,  // channel not needed for response_url
+                    null,  // threadTs not needed for response_url
+                    commandRequest.getUserId(),
+                    confirmationText,
+                    request // Store parsed request in metadata for button handlers
+            );
+
+            // Post confirmation message via response_url
+            slackApiClient.sendViaResponseUrl(responseUrl, message);
+            log.info("Successfully posted confirmation dialog via response_url");
+
+        } catch (Exception e) {
+            log.error("Failed to show confirmation dialog via response_url", e);
+
+            // Fallback: Open modal with error message
+            asyncUtility.executeAsync(() -> openLeaveApplicationModal(commandRequest, null));
+        }
+    }
+
+    /**
+     * Shows parsing error and offers to open modal using response_url.
+     *
+     * @param commandRequest The parsed Slack command request
+     * @param errorMessage  The error message to display
+     * @param responseUrl   The response_url for posting threaded messages
+     */
+    private void showParsingErrorAndOfferModalViaResponseUrl(
+            SlackCommandRequest commandRequest,
+            String errorMessage,
+            String responseUrl
+    ) {
+        try {
+            // Post error message with button to open modal (no channel/threadTs needed)
+            SlackMessageRequest message = SlackMessageTemplate.leaveParsingError(
+                    null,  // channel not needed for response_url
+                    null,  // threadTs not needed for response_url
+                    commandRequest.getUserId(),
+                    errorMessage
+            );
+
+            slackApiClient.sendViaResponseUrl(responseUrl, message);
+            log.info("Successfully posted parsing error message via response_url");
+
+        } catch (Exception e) {
+            log.error("Failed to show parsing error via response_url", e);
+
+            // Fallback: Just open the modal (if trigger_id is still valid)
+            try {
+                openLeaveApplicationModal(commandRequest, null);
+            } catch (Exception ex) {
+                log.error("Failed to open modal as fallback", ex);
+            }
+        }
+    }
+
+    /**
+     * Builds a human-readable confirmation message from parsed leave request.
+     *
+     * @param request The parsed leave request
+     * @return Formatted confirmation message
+     */
+    private String buildConfirmationMessage(ParsedLeaveRequest request) {
+        StringBuilder message = new StringBuilder();
+        message.append("*Leave Request Details*\n\n");
+
+        // Dates
+        if (request.getStartDate().equals(request.getEndDate())) {
+            message.append(String.format("*Date:* %s\n",
+                    request.getStartDate().format(java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy"))));
+        } else {
+            message.append(String.format("*Duration:* %s to %s\n",
+                    request.getStartDate().format(java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy")),
+                    request.getEndDate().format(java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy"))));
+        }
+
+        // Duration Type
+        message.append(String.format("*Duration Type:* %s\n",
+                java.text.MessageFormat.format("{0}", request.getDurationType())
+                        .replace("_", " ")));
+
+        // Leave Type
+        message.append(String.format("*Leave Type:* %s\n",
+                java.text.MessageFormat.format("{0}", request.getLeaveType())
+                        .replace("_", " ")));
+
+        // Reason (if provided)
+        if (request.getReason() != null && !request.getReason().isBlank()) {
+            message.append(String.format("*Reason:* %s\n", request.getReason()));
+        }
+
+        return message.toString();
+    }
+
+    /**
+     * Handles the Confirm button action from the confirmation message.
+     * <p>
+     * This method:
+     * 1. Updates the confirmation message to show processing status
+     * 2. Extracts the parsed leave request JSON from the button value
+     * 3. Deserializes it to ParsedLeaveRequest
+     * 4. Maps to LeaveIngestionRequest
+     * 5. Creates the leave via processLeaveRequest
+     *
+     * @param blockActionRequest The block action request
+     * @param action             The action that was triggered
+     */
+    private void handleConfirmLeaveAction(SlackBlockActionRequest blockActionRequest, SlackAction action) {
+        try {
+            // Extract channel and message info from container
+            String channelId = blockActionRequest.getContainer().getChannelId();
+            String messageTs = blockActionRequest.getContainer().getMessageTs();
+
+            // First: Update the confirmation message to remove buttons and show processing status
+            updateConfirmationMessage(channelId, messageTs, SlackMessageTemplate.buttonClickedProcessing());
+
+            // Extract the JSON value from the button
+            String requestJson = action.getValue();
+            log.info("Parsed request JSON from confirm button: {}", requestJson);
+
+            // Deserialize JSON to ParsedLeaveRequest
+            ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+            ParsedLeaveRequest parsedRequest = objectMapper.readValue(requestJson, ParsedLeaveRequest.class);
+            log.info("Deserialized parsed request: {}", parsedRequest);
+
+            // Map ParsedLeaveRequest to LeaveIngestionRequest using the mapper
+            LeaveIngestionRequest leaveRequest = slackLeaveRequestMapper.toLeaveIngestionRequest(parsedRequest);
+            log.info("Mapped to leave ingestion request: {}", leaveRequest);
+
+            String userId = blockActionRequest.getUser().getId();
+
+            log.info("Processing leave for userId: {}, channelId: {}, messageTs: {}",
+                    userId, channelId, messageTs);
+
+            // Process the leave request asynchronously
+            asyncUtility.executeAsync(() -> processLeaveRequest(
+                    leaveRequest,
+                    channelId,
+                    messageTs,
+                    userId
+            ));
+
+            log.info("Triggered async leave processing from confirm button");
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to deserialize parsed leave request from confirm button", e);
+            throw new RuntimeException("Failed to parse leave request data", e);
+        }
+    }
+
+    /**
+     * Handles the Edit button action from the confirmation message.
+     * <p>
+     * This method:
+     * 1. Updates the confirmation message to show opening modal status
+     * 2. Extracts the parsed leave request JSON from the button value
+     * 3. Deserializes it to ParsedLeaveRequest
+     * 4. Opens the modal with pre-filled data from the parsed request
+     *
+     * @param blockActionRequest The block action request
+     * @param action             The action that was triggered
+     */
+    private void handleEditLeaveAction(SlackBlockActionRequest blockActionRequest, SlackAction action) {
+        try {
+            // Extract channel and message info from container
+            String channelId = blockActionRequest.getContainer().getChannelId();
+            String messageTs = blockActionRequest.getContainer().getMessageTs();
+
+            // First: Update the confirmation message to remove buttons and show opening modal status
+            updateConfirmationMessage(channelId, messageTs, SlackMessageTemplate.buttonClickedOpeningModal());
+
+            // Extract the JSON value from the button
+            String requestJson = action.getValue();
+            log.info("Parsed request JSON from edit button: {}", requestJson);
+
+            // Deserialize JSON to ParsedLeaveRequest
+            ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+            ParsedLeaveRequest parsedRequest = objectMapper.readValue(requestJson, ParsedLeaveRequest.class);
+            log.info("Deserialized parsed request: {}", parsedRequest);
+
+            // Build context for opening modal
+            String userId = blockActionRequest.getUser().getId();
+
+            // Create a minimal SlackCommandRequest for modal building
+            SlackCommandRequest slackRequest = new SlackCommandRequest();
+            slackRequest.setUserId(userId);
+            slackRequest.setChannelId(channelId);
+            slackRequest.setChannelName(""); // Channel name not available in message container
+
+            // Build and open modal with pre-filled data
+            SlackModalView modalView = buildModalWithParsedData(slackRequest, messageTs, parsedRequest);
+
+            // Open modal using trigger_id from the block action request
+            slackApiClient.openModal(blockActionRequest.getTriggerId(), modalView);
+
+            log.info("Successfully opened modal with pre-filled data from edit button");
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to deserialize parsed leave request from edit button", e);
+            throw new RuntimeException("Failed to parse leave request data", e);
+        }
+    }
+
+    /**
+     * Handles the Open Modal button action from parsing error messages.
+     * <p>
+     * This method opens a blank modal when user clicks the button after parsing fails.
+     *
+     * @param blockActionRequest The block action request
+     * @param action             The action that was triggered
+     */
+    private void handleOpenModalAction(SlackBlockActionRequest blockActionRequest, SlackAction action) {
+        String userId = blockActionRequest.getUser().getId();
+        String channelId = blockActionRequest.getContainer().getChannelId();
+        String messageTs = blockActionRequest.getContainer().getMessageTs();
+
+        // Create a minimal SlackCommandRequest
+        SlackCommandRequest slackRequest = new SlackCommandRequest();
+        slackRequest.setUserId(userId);
+        slackRequest.setChannelId(channelId);
+        slackRequest.setChannelName(""); // Channel name not available
+
+        // Open blank modal
+        asyncUtility.executeAsync(() -> openLeaveApplicationModal(slackRequest, messageTs));
+        log.info("Opened blank modal from open modal button action");
+    }
+
+    /**
+     * Builds a modal with pre-filled data from the parsed leave request.
+     * <p>
+     * This creates a modal with all fields pre-populated from the AI-parsed data.
+     *
+     * @param slackRequest  The Slack request context
+     * @param threadTs      The thread timestamp
+     * @param parsedRequest The parsed leave request
+     * @return Configured modal view with pre-filled data
+     */
+    private SlackModalView buildModalWithParsedData(
+            SlackCommandRequest slackRequest,
+            String threadTs,
+            ParsedLeaveRequest parsedRequest
+    ) {
+        // Determine which modal to build based on leave type
+        if (parsedRequest.getLeaveType() == one.june.leave_management.domain.leave.model.LeaveType.OPTIONAL_HOLIDAY) {
+            return buildOptionalHolidayModalWithData(slackRequest, threadTs, parsedRequest);
+        } else {
+            return buildAnnualLeaveModalWithData(slackRequest, threadTs, parsedRequest);
+        }
+    }
+
+    /**
+     * Builds an Annual Leave modal with pre-filled data.
+     *
+     * @param slackRequest  The Slack request context
+     * @param threadTs      The thread timestamp
+     * @param parsedRequest The parsed leave request
+     * @return Configured modal view
+     */
+    private SlackModalView buildAnnualLeaveModalWithData(
+            SlackCommandRequest slackRequest,
+            String threadTs,
+            ParsedLeaveRequest parsedRequest
+    ) {
+        // Leave Type options
+        List<SlackOption> leaveTypeOptions = List.of(
+                SlackOption.of("Annual Leave", "ANNUAL_LEAVE"),
+                SlackOption.of("Optional Holiday", "OPTIONAL_HOLIDAY")
+        );
+
+        // Leave Duration options
+        List<SlackOption> leaveDurationOptions = List.of(
+                SlackOption.of("Full Day", "FULL_DAY"),
+                SlackOption.of("First Half", "FIRST_HALF"),
+                SlackOption.of("Second Half", "SECOND_HALF")
+        );
+
+        // Create static select element for leave type (preselect Annual Leave)
+        SlackStaticSelectElement leaveTypeSelect = SlackStaticSelectElement.builder()
+                .actionId("leave_type_category_action")
+                .options(leaveTypeOptions)
+                .initialOption(leaveTypeOptions.get(0)) // Annual Leave
+                .placeholder(one.june.leave_management.adapter.outbound.slack.dto.composition.SlackText.plainText("Select leave type"))
+                .build();
+
+        // Create section block with static select as accessory
+        SlackSectionBlock leaveTypeSection = SlackBlockBuilder.sectionWithStaticSelect(
+                "leave_type_category_block",
+                "*Leave Type*",
+                leaveTypeSelect
+        );
+
+        List<Object> blocks = new java.util.ArrayList<>();
+        blocks.add(leaveTypeSection);
+
+        // Add duration radio buttons (preselect parsed duration)
+        String initialDuration = parsedRequest.getDurationType() != null
+                ? parsedRequest.getDurationType().name()
+                : "FULL_DAY";
+        blocks.add(SlackBlockBuilder.radioButtonsInput(
+                "leave_duration_block",
+                "leave_duration_action",
+                "Duration",
+                leaveDurationOptions,
+                initialDuration
+        ));
+
+        // Add start date (pre-filled)
+        blocks.add(SlackBlockBuilder.dateInput(
+                "start_date_block",
+                "start_date_action",
+                "Start Date",
+                "Select a date",
+                false // required
+        ));
+
+        // Add end date (pre-filled)
+        blocks.add(SlackBlockBuilder.dateInput(
+                "end_date_block",
+                "end_date_action",
+                "End Date",
+                "Select a date",
+                false // required
+        ));
+
+        // Add reason (pre-filled if available)
+        blocks.add(SlackBlockBuilder.plainTextInput(
+                "reason_block",
+                "reason_action",
+                "Reason",
+                "Optional: Provide a reason for your leave",
+                true, // multiline
+                true // optional
+        ));
+
+        // Create JSON metadata with thread context
+        String metadataJson = SlackMetadataUtil.createMetadata(
+                slackRequest.getUserId(),
+                slackRequest.getChannelId(),
+                slackRequest.getChannelName(),
+                threadTs
+        );
+
+        return SlackModalBuilder.create("Apply for Annual Leave", "leave_application_submit")
+                .withBlocks(blocks)
+                .withPrivateMetadata(metadataJson)
+                .build();
+    }
+
+    /**
+     * Builds an Optional Holiday modal with pre-filled data.
+     *
+     * @param slackRequest  The Slack request context
+     * @param threadTs      The thread timestamp
+     * @param parsedRequest The parsed leave request
+     * @return Configured modal view
+     */
+    private SlackModalView buildOptionalHolidayModalWithData(
+            SlackCommandRequest slackRequest,
+            String threadTs,
+            ParsedLeaveRequest parsedRequest
+    ) {
+        // Get holidays from database
+        List<SlackOption> holidayOptions = optionalHolidayService.getAllHolidaysAsSlackOptions();
+
+        // Leave Type options (preselect Optional Holiday)
+        List<SlackOption> leaveTypeOptions = List.of(
+                SlackOption.of("Annual Leave", "ANNUAL_LEAVE"),
+                SlackOption.of("Optional Holiday", "OPTIONAL_HOLIDAY")
+        );
+
+        // Create static select element for leave type (preselect Optional Holiday)
+        SlackStaticSelectElement leaveTypeSelect = SlackStaticSelectElement.builder()
+                .actionId("leave_type_category_action")
+                .options(leaveTypeOptions)
+                .initialOption(leaveTypeOptions.get(1)) // Optional Holiday (index 1)
+                .placeholder(one.june.leave_management.adapter.outbound.slack.dto.composition.SlackText.plainText("Select leave type"))
+                .build();
+
+        // Create section block with static select as accessory
+        SlackSectionBlock leaveTypeSection = SlackBlockBuilder.sectionWithStaticSelect(
+                "leave_type_category_block",
+                "*Leave Type*",
+                leaveTypeSelect
+        );
+
+        List<Object> blocks = new java.util.ArrayList<>();
+        blocks.add(leaveTypeSection);
+
+        // Add Holiday dropdown
         blocks.add(SlackBlockBuilder.staticSelectInput(
                 "holiday_select_block",
                 "holiday_select_action",

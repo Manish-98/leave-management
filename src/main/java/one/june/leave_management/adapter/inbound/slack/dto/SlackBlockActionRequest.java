@@ -21,6 +21,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @ToString
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SlackBlockActionRequest {
 
     @JsonProperty("type")
@@ -47,6 +48,9 @@ public class SlackBlockActionRequest {
     @JsonProperty("trigger_id")
     private String triggerId; // Used for opening new modals
 
+    @JsonProperty("channel")
+    private SlackChannel channel;
+
     @JsonProperty("container")
     private SlackContainer container;
 
@@ -58,6 +62,12 @@ public class SlackBlockActionRequest {
 
     @JsonProperty("view")
     private SlackView view;
+
+    @JsonProperty("message")
+    private SlackMessage message;
+
+    @JsonProperty("response_url")
+    private String responseUrl; // For sending message responses
 
     @Getter
     @Setter
@@ -93,6 +103,20 @@ public class SlackBlockActionRequest {
     @NoArgsConstructor
     @AllArgsConstructor
     @ToString
+    public static class SlackChannel {
+        @JsonProperty("id")
+        private String id;
+
+        @JsonProperty("name")
+        private String name;
+    }
+
+    @Getter
+    @Setter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @ToString
     public static class SlackUser {
         @JsonProperty("id")
         private String id;
@@ -113,15 +137,30 @@ public class SlackBlockActionRequest {
     @NoArgsConstructor
     @AllArgsConstructor
     @ToString
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class SlackContainer {
         @JsonProperty("type")
-        private String type; // "view"
+        private String type; // "view" or "message"
 
+        // View-based container fields
         @JsonProperty("view_id")
         private String viewId;
 
         @JsonProperty("view_hash")
         private String viewHash;
+
+        // Message-based container fields
+        @JsonProperty("message_ts")
+        private String messageTs;
+
+        @JsonProperty("channel_id")
+        private String channelId;
+
+        @JsonProperty("thread_ts")
+        private String threadTs;
+
+        @JsonProperty("is_ephemeral")
+        private Boolean isEphemeral;
     }
 
     /**
@@ -216,5 +255,38 @@ public class SlackBlockActionRequest {
             @JsonProperty("emoji")
             private Boolean emoji;
         }
+    }
+
+    /**
+     * Represents a message in the block action payload
+     * <p>
+     * This is included when the block action originates from a message.
+     */
+    @Getter
+    @Setter
+    @Builder
+    @ToString
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SlackMessage {
+
+        @JsonProperty("type")
+        private String type;
+
+        @JsonProperty("subtype")
+        private String subtype;
+
+        @JsonProperty("ts")
+        private String ts;
+
+        @JsonProperty("bot_id")
+        private String botId;
+
+        @JsonProperty("blocks")
+        private List<Object> blocks;
+
+        @JsonProperty("text")
+        private String text;
     }
 }

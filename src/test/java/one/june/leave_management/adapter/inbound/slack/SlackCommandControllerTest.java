@@ -188,4 +188,68 @@ class SlackCommandControllerTest {
                 () -> controller.handleLeaveCommand(request, requestBody.getBytes())
         );
     }
+
+    @Test
+    @DisplayName("Should handle command with special characters in text")
+    void shouldHandleCommandWithSpecialCharacters() {
+        // Given
+        String requestBody = "token=gIkuvaNzQIHg97ATvDxqgjtO" +
+                "&user_id=U2147483697" +
+                "&command=/leave" +
+                "&text=annual%202024-01-01%20to%202024-01-05%20%3C%26%20special";
+
+        when(request.getHeader("X-Slack-Signature")).thenReturn("v0=a2114d57b48eac39b9ad189dd8316235a7b4a8d21a10bd27519666489c69b503");
+        when(request.getHeader("X-Slack-Request-Timestamp")).thenReturn("1531420618");
+
+        // When
+        ResponseEntity<SlackCommandResponse> response = controller.handleLeaveCommand(request, requestBody.getBytes());
+
+        // Then
+        verify(signatureVerifier).verify(any(), any(), any());
+        verify(slackLeaveOrchestrator).handleSlashCommand(any(SlackCommandRequest.class));
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("Should handle command with unicode characters")
+    void shouldHandleCommandWithUnicodeCharacters() {
+        // Given
+        String requestBody = "token=gIkuvaNzQIHg97ATvDxqgjtO" +
+                "&user_id=U2147483697" +
+                "&command=/leave" +
+                "&text=🎉%20annual%20leave";
+
+        when(request.getHeader("X-Slack-Signature")).thenReturn("v0=a2114d57b48eac39b9ad189dd8316235a7b4a8d21a10bd27519666489c69b503");
+        when(request.getHeader("X-Slack-Request-Timestamp")).thenReturn("1531420618");
+
+        // When
+        ResponseEntity<SlackCommandResponse> response = controller.handleLeaveCommand(request, requestBody.getBytes());
+
+        // Then
+        verify(signatureVerifier).verify(any(), any(), any());
+        verify(slackLeaveOrchestrator).handleSlashCommand(any(SlackCommandRequest.class));
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("Should parse user ID correctly from request")
+    void shouldParseUserIdCorrectly() {
+        // Given
+        String requestBody = "token=gIkuvaNzQIHg97ATvDxqgjtO" +
+                "&user_id=U999999" +
+                "&user_name=TestUser" +
+                "&command=/leave";
+
+        when(request.getHeader("X-Slack-Signature")).thenReturn("v0=a2114d57b48eac39b9ad189dd8316235a7b4a8d21a10bd27519666489c69b503");
+        when(request.getHeader("X-Slack-Request-Timestamp")).thenReturn("1531420618");
+
+        // When
+        controller.handleLeaveCommand(request, requestBody.getBytes());
+
+        // Then
+        verify(slackLeaveOrchestrator).handleSlashCommand(argThat(cmd ->
+                cmd.getUserId().equals("U999999") &&
+                cmd.getUserName().equals("TestUser")
+        ));
+    }
 }

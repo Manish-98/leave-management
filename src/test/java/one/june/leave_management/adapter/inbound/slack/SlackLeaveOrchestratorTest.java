@@ -1,7 +1,12 @@
 package one.june.leave_management.adapter.inbound.slack;
 
 import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest.SlackTeam;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest.SlackUser;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest.SlackChannel;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest.SlackMessage;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackCommandRequest;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackAction;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewSubmissionRequest;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
 import one.june.leave_management.adapter.outbound.slack.client.SlackApiClient;
@@ -10,10 +15,14 @@ import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageResponse
 import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenResponse;
 import one.june.leave_management.application.employee.dto.EmployeeDto;
+import one.june.leave_management.application.genai.dto.ParseResult;
+import one.june.leave_management.application.genai.dto.ParsedLeaveRequest;
+import one.june.leave_management.application.genai.service.LeaveParsingService;
 import one.june.leave_management.application.leave.command.LeaveIngestionCommand;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveService;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
+import one.june.leave_management.common.async.AsyncUtility;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.adapter.inbound.slack.mapper.SlackLeaveRequestMapper;
 import one.june.leave_management.common.model.DateRange;
@@ -31,6 +40,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -38,12 +48,15 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 /**
@@ -70,6 +83,12 @@ class SlackLeaveOrchestratorTest {
     @Mock
     private SlackLeaveRequestMapper slackLeaveRequestMapper;
 
+    @Mock
+    private LeaveParsingService leaveParsingService;
+
+    @Mock
+    private AsyncUtility asyncUtility;
+
     private SlackLeaveOrchestrator orchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -80,6 +99,7 @@ class SlackLeaveOrchestratorTest {
     private static final String TEST_THREAD_TS = "1234567890.123456";
     private static final String TEST_TRIGGER_ID = "trigger123";
     private static final String TEST_VIEW_ID = "V12345";
+    private static final String TEST_RESPONSE_URL = "https://hooks.slack.com/commands/T123/C123/secret";
 
     @BeforeEach
     void setUp() {
@@ -88,13 +108,25 @@ class SlackLeaveOrchestratorTest {
                 leaveMapper,
                 slackApiClient,
                 optionalHolidayService,
-                slackLeaveRequestMapper
+                slackLeaveRequestMapper,
+                leaveParsingService,
+                asyncUtility
         );
     }
 
     @Nested
-    @DisplayName("processLeaveRequestAsync Tests")
+    @DisplayName("processLeaveRequest Tests")
     class ProcessLeaveRequestAsyncTests {
+
+        @BeforeEach
+        void setUpProcessLeaveRequestTests() {
+            // For these tests, executeAsync should immediately execute the runnable
+            lenient().doAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return null;
+            }).when(asyncUtility).executeAsync(any());
+        }
 
         @Test
         @DisplayName("Should successfully process leave request with FULL_DAY ANNUAL_LEAVE")
@@ -116,7 +148,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).postThreadReply(any(), any(), any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -145,7 +177,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).postThreadReply(any(), any(), any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -175,7 +207,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).postThreadReply(any(), any(), any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -204,7 +236,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).postThreadReply(any(), any(), any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -232,7 +264,7 @@ class SlackLeaveOrchestratorTest {
             }).when(leaveService).ingest(any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then - Should complete without throwing exception (best-effort error handling)
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -260,7 +292,7 @@ class SlackLeaveOrchestratorTest {
             }).when(leaveService).ingest(any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -268,42 +300,69 @@ class SlackLeaveOrchestratorTest {
         }
 
         @Test
-        @DisplayName("Should run asynchronously and return immediately")
-        void shouldRunAsynchronously() {
-            // Given
-            LeaveIngestionRequest leaveRequest = createValidLeaveIngestionRequest(
-                    LeaveType.ANNUAL_LEAVE, LeaveDurationType.FULL_DAY
-            );
+        @DisplayName("Should run asynchronously via AsyncUtility")
+        void shouldRunAsynchronously() throws Exception {
+            // Given - Set up the mapper for handleViewSubmission
+            lenient().when(slackLeaveRequestMapper.toLeaveIngestionRequest(any(SlackViewSubmissionRequest.class)))
+                    .thenAnswer(invocation -> {
+                        SlackViewSubmissionRequest request = invocation.getArgument(0);
+                        // Return a valid request
+                        return createValidLeaveIngestionRequest(
+                                LeaveType.ANNUAL_LEAVE, LeaveDurationType.FULL_DAY,
+                                LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 5)
+                        );
+                    });
+
+            String requestBody = createValidViewSubmissionRequestBody();
             LeaveIngestionCommand command = createMockCommand();
             LeaveDto result = createMockLeaveDto();
 
-            when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
+            lenient().when(leaveMapper.toCommand(any(), any(), any())).thenReturn(command);
             when(leaveService.ingest(any())).thenAnswer(invocation -> {
                 Thread.sleep(100); // Simulate processing
                 return result;
             });
-            when(slackApiClient.postThreadReply(any(), any(), any())).thenReturn(new SlackMessageResponse());
+            lenient().when(slackApiClient.postThreadReply(any(), any(), any())).thenReturn(new SlackMessageResponse());
+
+            // Override asyncUtility to actually run async for this test
+            CountDownLatch latch = new CountDownLatch(1);
+            doAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                new Thread(() -> {
+                    try {
+                        runnable.run();
+                    } finally {
+                        latch.countDown();
+                    }
+                }).start();
+                return null;
+            }).when(asyncUtility).executeAsync(any());
 
             long startTime = System.currentTimeMillis();
 
-            // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            // When - call handleViewSubmission which uses async wrapper
+            orchestrator.handleViewSubmission(requestBody);
 
             long endTime = System.currentTimeMillis();
 
-            // Then - Should return immediately (within 200ms), not wait for processing
-            // Note: @Async methods might have some dispatch overhead, so we allow reasonable time
-            assertThat(endTime - startTime).isLessThan(200);
+            // Then - Should return immediately (within 500ms), not wait for processing
+            assertThat(endTime - startTime).isLessThan(500);
+
+            // Wait for async processing to complete
+            assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+
+            // Verify the service was actually called
+            verify(leaveService).ingest(any());
         }
 
         @Test
-        @DisplayName("Should verify method signature is async")
+        @DisplayName("Should verify method signature has @Transactional but not @Async")
         void shouldVerifyAsyncMethodSignature() throws NoSuchMethodException {
-            // Then - Verify @Async annotation
-            var method = SlackLeaveOrchestrator.class.getMethod("processLeaveRequestAsync",
+            // Then - Verify @Transactional annotation is present, but not @Async
+            var method = SlackLeaveOrchestrator.class.getMethod("processLeaveRequest",
                     LeaveIngestionRequest.class, String.class, String.class, String.class);
 
-            assertThat(method.isAnnotationPresent(Async.class)).isTrue();
+            assertThat(method.isAnnotationPresent(Async.class)).isFalse();
             assertThat(method.isAnnotationPresent(Transactional.class)).isTrue();
         }
     }
@@ -323,7 +382,9 @@ class SlackLeaveOrchestratorTest {
             when(slackApiClient.postMessage(eq(TEST_CHANNEL_ID), any())).thenReturn(response);
 
             // When
-            SlackMessageResponse result = orchestrator.postThreadAnchorMessage(TEST_CHANNEL_ID, userTag);
+            SlackMessageResponse result = orchestrator.postThreadAnchorMessage(
+                    TEST_CHANNEL_ID, TEST_THREAD_TS, userTag, "parsing", "test text"
+            );
 
             // Then
             assertThat(result).isNotNull();
@@ -340,7 +401,9 @@ class SlackLeaveOrchestratorTest {
                     .thenThrow(new RuntimeException("Slack API error"));
 
             // When
-            SlackMessageResponse result = orchestrator.postThreadAnchorMessage(TEST_CHANNEL_ID, userTag);
+            SlackMessageResponse result = orchestrator.postThreadAnchorMessage(
+                    TEST_CHANNEL_ID, TEST_THREAD_TS, userTag, "parsing", "test text"
+            );
 
             // Then
             assertThat(result).isNull();
@@ -355,7 +418,9 @@ class SlackLeaveOrchestratorTest {
                     .thenThrow(new IllegalArgumentException("Channel ID cannot be null"));
 
             // When
-            SlackMessageResponse result = orchestrator.postThreadAnchorMessage(null, userTag);
+            SlackMessageResponse result = orchestrator.postThreadAnchorMessage(
+                    null, TEST_THREAD_TS, userTag, "parsing", "test text"
+            );
 
             // Then
             assertThat(result).isNull();
@@ -400,7 +465,7 @@ class SlackLeaveOrchestratorTest {
         @BeforeEach
         void setUp() {
             // Mock the mapper to return valid LeaveIngestionRequest based on the request type
-            lenient().when(slackLeaveRequestMapper.toLeaveIngestionRequest(any()))
+            lenient().when(slackLeaveRequestMapper.toLeaveIngestionRequest(any(SlackViewSubmissionRequest.class)))
                     .thenAnswer(invocation -> {
                         SlackViewSubmissionRequest request = invocation.getArgument(0);
                         // Extract the leave type from the state values
@@ -445,6 +510,27 @@ class SlackLeaveOrchestratorTest {
                         // Create the LeaveIngestionRequest
                         return createValidLeaveIngestionRequest(leaveType, duration, startDate, endDate);
                     });
+
+            // For these tests, executeAsync should immediately execute the runnable
+            lenient().doAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return null;
+            }).when(asyncUtility).executeAsync(any());
+
+            // Mock leaveMapper to capture the request and return appropriate command
+            lenient().when(leaveMapper.toCommand(any(), any(), any()))
+                    .thenAnswer(invocation -> {
+                        LeaveIngestionRequest request = invocation.getArgument(0);
+                        return LeaveIngestionCommand.builder()
+                                .userId(TEST_USER_ID)
+                                .dateRange(request.getDateRange())
+                                .type(request.getType())
+                                .durationType(request.getDurationType())
+                                .sourceType(request.getSourceType())
+                                .sourceId(request.getSourceId())
+                                .build();
+                    });
         }
 
         @Test
@@ -452,23 +538,13 @@ class SlackLeaveOrchestratorTest {
         void shouldSuccessfullyProcessViewSubmission() {
             // Given
             String requestBody = createValidViewSubmissionRequestBody();
-
-            // Mock async call (we can't easily test async in unit test, so we'll just verify it's called)
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).processLeaveRequestAsync(
-                    any(), any(), any(), any()
-            );
+            when(leaveService.ingest(any())).thenReturn(createMockLeaveDto());
 
             // When
-            spyOrchestrator.handleViewSubmission(requestBody);
+            orchestrator.handleViewSubmission(requestBody);
 
-            // Then - Verify the async method was called with correct parameters
-            verify(spyOrchestrator).processLeaveRequestAsync(
-                    any(LeaveIngestionRequest.class),
-                    eq(TEST_CHANNEL_ID),
-                    eq(TEST_THREAD_TS),
-                    eq(TEST_USER_ID)
-            );
+            // Then - Verify the service was called
+            verify(leaveService).ingest(any());
         }
 
         @Test
@@ -487,21 +563,15 @@ class SlackLeaveOrchestratorTest {
         void shouldHandleAnnualLeaveType() {
             // Given
             String requestBody = createViewSubmissionRequestBody(LeaveType.ANNUAL_LEAVE, LeaveDurationType.FULL_DAY);
-
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).processLeaveRequestAsync(
-                    any(), any(), any(), any()
-            );
+            when(leaveService.ingest(any())).thenReturn(createMockLeaveDto());
 
             // When
-            spyOrchestrator.handleViewSubmission(requestBody);
+            orchestrator.handleViewSubmission(requestBody);
 
             // Then
-            ArgumentCaptor<LeaveIngestionRequest> requestCaptor = ArgumentCaptor.forClass(LeaveIngestionRequest.class);
-            verify(spyOrchestrator).processLeaveRequestAsync(
-                    requestCaptor.capture(), any(), any(), any()
-            );
-            assertThat(requestCaptor.getValue().getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
+            ArgumentCaptor<LeaveIngestionCommand> commandCaptor = ArgumentCaptor.forClass(LeaveIngestionCommand.class);
+            verify(leaveService).ingest(commandCaptor.capture());
+            assertThat(commandCaptor.getValue().getType()).isEqualTo(LeaveType.ANNUAL_LEAVE);
         }
 
         @Test
@@ -509,21 +579,15 @@ class SlackLeaveOrchestratorTest {
         void shouldHandleOptionalHolidayType() {
             // Given
             String requestBody = createViewSubmissionRequestBody(LeaveType.OPTIONAL_HOLIDAY, LeaveDurationType.FULL_DAY);
-
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).processLeaveRequestAsync(
-                    any(), any(), any(), any()
-            );
+            when(leaveService.ingest(any())).thenReturn(createMockLeaveDto());
 
             // When
-            spyOrchestrator.handleViewSubmission(requestBody);
+            orchestrator.handleViewSubmission(requestBody);
 
             // Then
-            ArgumentCaptor<LeaveIngestionRequest> requestCaptor = ArgumentCaptor.forClass(LeaveIngestionRequest.class);
-            verify(spyOrchestrator).processLeaveRequestAsync(
-                    requestCaptor.capture(), any(), any(), any()
-            );
-            assertThat(requestCaptor.getValue().getType()).isEqualTo(LeaveType.OPTIONAL_HOLIDAY);
+            ArgumentCaptor<LeaveIngestionCommand> commandCaptor = ArgumentCaptor.forClass(LeaveIngestionCommand.class);
+            verify(leaveService).ingest(commandCaptor.capture());
+            assertThat(commandCaptor.getValue().getType()).isEqualTo(LeaveType.OPTIONAL_HOLIDAY);
         }
 
         @Test
@@ -531,21 +595,15 @@ class SlackLeaveOrchestratorTest {
         void shouldHandleFirstHalfDuration() {
             // Given
             String requestBody = createViewSubmissionRequestBody(LeaveType.ANNUAL_LEAVE, LeaveDurationType.FIRST_HALF);
-
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).processLeaveRequestAsync(
-                    any(), any(), any(), any()
-            );
+            when(leaveService.ingest(any())).thenReturn(createMockLeaveDto());
 
             // When
-            spyOrchestrator.handleViewSubmission(requestBody);
+            orchestrator.handleViewSubmission(requestBody);
 
             // Then
-            ArgumentCaptor<LeaveIngestionRequest> requestCaptor = ArgumentCaptor.forClass(LeaveIngestionRequest.class);
-            verify(spyOrchestrator).processLeaveRequestAsync(
-                    requestCaptor.capture(), any(), any(), any()
-            );
-            assertThat(requestCaptor.getValue().getDurationType()).isEqualTo(LeaveDurationType.FIRST_HALF);
+            ArgumentCaptor<LeaveIngestionCommand> commandCaptor = ArgumentCaptor.forClass(LeaveIngestionCommand.class);
+            verify(leaveService).ingest(commandCaptor.capture());
+            assertThat(commandCaptor.getValue().getDurationType()).isEqualTo(LeaveDurationType.FIRST_HALF);
         }
 
         @Test
@@ -553,21 +611,15 @@ class SlackLeaveOrchestratorTest {
         void shouldHandleSecondHalfDuration() {
             // Given
             String requestBody = createViewSubmissionRequestBody(LeaveType.ANNUAL_LEAVE, LeaveDurationType.SECOND_HALF);
-
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).processLeaveRequestAsync(
-                    any(), any(), any(), any()
-            );
+            when(leaveService.ingest(any())).thenReturn(createMockLeaveDto());
 
             // When
-            spyOrchestrator.handleViewSubmission(requestBody);
+            orchestrator.handleViewSubmission(requestBody);
 
             // Then
-            ArgumentCaptor<LeaveIngestionRequest> requestCaptor = ArgumentCaptor.forClass(LeaveIngestionRequest.class);
-            verify(spyOrchestrator).processLeaveRequestAsync(
-                    requestCaptor.capture(), any(), any(), any()
-            );
-            assertThat(requestCaptor.getValue().getDurationType()).isEqualTo(LeaveDurationType.SECOND_HALF);
+            ArgumentCaptor<LeaveIngestionCommand> commandCaptor = ArgumentCaptor.forClass(LeaveIngestionCommand.class);
+            verify(leaveService).ingest(commandCaptor.capture());
+            assertThat(commandCaptor.getValue().getDurationType()).isEqualTo(LeaveDurationType.SECOND_HALF);
         }
 
         @Test
@@ -575,22 +627,16 @@ class SlackLeaveOrchestratorTest {
         void shouldHandleSingleDayLeave() {
             // Given
             String requestBody = createViewSubmissionRequestBodyWithoutEndDate();
-
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).processLeaveRequestAsync(
-                    any(), any(), any(), any()
-            );
+            when(leaveService.ingest(any())).thenReturn(createMockLeaveDto());
 
             // When
-            spyOrchestrator.handleViewSubmission(requestBody);
+            orchestrator.handleViewSubmission(requestBody);
 
             // Then
-            ArgumentCaptor<LeaveIngestionRequest> requestCaptor = ArgumentCaptor.forClass(LeaveIngestionRequest.class);
-            verify(spyOrchestrator).processLeaveRequestAsync(
-                    requestCaptor.capture(), any(), any(), any()
-            );
-            assertThat(requestCaptor.getValue().getDateRange().getEndDate())
-                    .isEqualTo(requestCaptor.getValue().getDateRange().getStartDate());
+            ArgumentCaptor<LeaveIngestionCommand> commandCaptor = ArgumentCaptor.forClass(LeaveIngestionCommand.class);
+            verify(leaveService).ingest(commandCaptor.capture());
+            assertThat(commandCaptor.getValue().getDateRange().getEndDate())
+                    .isEqualTo(commandCaptor.getValue().getDateRange().getStartDate());
         }
     }
 
@@ -639,6 +685,16 @@ class SlackLeaveOrchestratorTest {
     @DisplayName("handleSlashCommand Tests")
     class HandleSlashCommandTests {
 
+        @BeforeEach
+        void setUpHandleSlashCommandTests() {
+            // For these tests, executeAsync should immediately execute the runnable
+            lenient().doAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return null;
+            }).when(asyncUtility).executeAsync(any());
+        }
+
         @Test
         @DisplayName("Should successfully handle slash command workflow")
         void shouldSuccessfullyHandleSlashCommand() {
@@ -649,15 +705,12 @@ class SlackLeaveOrchestratorTest {
 
             when(slackApiClient.postMessage(eq(TEST_CHANNEL_ID), any())).thenReturn(messageResponse);
 
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).openLeaveApplicationModalAsync(any(), any());
-
             // When
-            spyOrchestrator.handleSlashCommand(commandRequest);
+            orchestrator.handleSlashCommand(commandRequest);
 
             // Then
             verify(slackApiClient).postMessage(eq(TEST_CHANNEL_ID), any());
-            verify(spyOrchestrator).openLeaveApplicationModalAsync(eq(commandRequest), eq(TEST_THREAD_TS));
+            verify(slackApiClient).openModal(eq(commandRequest.getTriggerId()), any());
         }
 
         @Test
@@ -667,14 +720,11 @@ class SlackLeaveOrchestratorTest {
             SlackCommandRequest commandRequest = createValidSlackCommandRequest();
             when(slackApiClient.postMessage(any(), any())).thenReturn(null);
 
-            SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).openLeaveApplicationModalAsync(any(), any());
-
             // When
-            spyOrchestrator.handleSlashCommand(commandRequest);
+            orchestrator.handleSlashCommand(commandRequest);
 
-            // Then
-            verify(spyOrchestrator).openLeaveApplicationModalAsync(eq(commandRequest), isNull());
+            // Then - Should still attempt to open modal (with null threadTs)
+            verify(slackApiClient).openModal(eq(commandRequest.getTriggerId()), any());
         }
 
         @Test
@@ -689,7 +739,7 @@ class SlackLeaveOrchestratorTest {
             when(slackApiClient.postMessage(any(), messageCaptor.capture())).thenReturn(messageResponse);
 
             SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).openLeaveApplicationModalAsync(any(), any());
+            doNothing().when(spyOrchestrator).openLeaveApplicationModal(any(), any());
 
             // When
             spyOrchestrator.handleSlashCommand(commandRequest);
@@ -707,13 +757,13 @@ class SlackLeaveOrchestratorTest {
                     .thenThrow(new RuntimeException("Slack API error"));
 
             SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).openLeaveApplicationModalAsync(any(), any());
+            doNothing().when(spyOrchestrator).openLeaveApplicationModal(any(), any());
 
             // When
             spyOrchestrator.handleSlashCommand(commandRequest);
 
             // Then - Should continue with modal opening
-            verify(spyOrchestrator).openLeaveApplicationModalAsync(eq(commandRequest), isNull());
+            verify(spyOrchestrator).openLeaveApplicationModal(eq(commandRequest), isNull());
         }
 
         @Test
@@ -728,7 +778,7 @@ class SlackLeaveOrchestratorTest {
             when(slackApiClient.postMessage(any(), any())).thenReturn(response);
 
             SlackLeaveOrchestrator spyOrchestrator = spy(orchestrator);
-            doNothing().when(spyOrchestrator).openLeaveApplicationModalAsync(any(), any());
+            doNothing().when(spyOrchestrator).openLeaveApplicationModal(any(), any());
 
             // When
             Thread thread1 = new Thread(() -> spyOrchestrator.handleSlashCommand(command1));
@@ -740,12 +790,12 @@ class SlackLeaveOrchestratorTest {
             thread2.join();
 
             // Then - Should handle both without interference
-            verify(spyOrchestrator, times(2)).openLeaveApplicationModalAsync(any(), any());
+            verify(spyOrchestrator, times(2)).openLeaveApplicationModal(any(), any());
         }
     }
 
     @Nested
-    @DisplayName("openLeaveApplicationModalAsync Tests")
+    @DisplayName("openLeaveApplicationModal Tests")
     class OpenLeaveApplicationModalAsyncTests {
 
         @Test
@@ -761,7 +811,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).openModal(any(), any());
 
             // When
-            orchestrator.openLeaveApplicationModalAsync(slackRequest, TEST_THREAD_TS);
+            orchestrator.openLeaveApplicationModal(slackRequest, TEST_THREAD_TS);
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -777,7 +827,7 @@ class SlackLeaveOrchestratorTest {
                     .when(slackApiClient).openModal(any(), any());
 
             // When
-            orchestrator.openLeaveApplicationModalAsync(slackRequest, TEST_THREAD_TS);
+            orchestrator.openLeaveApplicationModal(slackRequest, TEST_THREAD_TS);
 
             // Then - Should complete without exception despite exception being thrown
             verify(slackApiClient).openModal(any(), any());
@@ -797,7 +847,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).openModal(eq(TEST_TRIGGER_ID), modalCaptor.capture());
 
             // When
-            orchestrator.openLeaveApplicationModalAsync(slackRequest, TEST_THREAD_TS);
+            orchestrator.openLeaveApplicationModal(slackRequest, TEST_THREAD_TS);
 
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -811,29 +861,57 @@ class SlackLeaveOrchestratorTest {
 
         @Test
         @DisplayName("Should run asynchronously")
-        void shouldRunAsynchronously() {
+        void shouldRunAsynchronously() throws Exception {
             // Given
             SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            SlackMessageResponse messageResponse = new SlackMessageResponse();
+            messageResponse.setTs(TEST_THREAD_TS);
+
+            when(slackApiClient.postMessage(any(), any())).thenReturn(messageResponse);
             when(slackApiClient.openModal(any(), any())).thenAnswer(invocation -> {
                 Thread.sleep(100);
                 return new SlackMessageResponse();
             });
 
+            // Make asyncUtility actually run async for this test
+            CountDownLatch latch = new CountDownLatch(1);
+            doAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                new Thread(() -> {
+                    runnable.run();
+                    latch.countDown();
+                }).start();
+                return null;
+            }).when(asyncUtility).executeAsync(any());
+
             long startTime = System.currentTimeMillis();
 
-            // When
-            orchestrator.openLeaveApplicationModalAsync(slackRequest, TEST_THREAD_TS);
+            // When - call handleSlashCommand which uses async wrapper
+            orchestrator.handleSlashCommand(slackRequest);
 
             long endTime = System.currentTimeMillis();
 
             // Then - Should return immediately (within 200ms for async dispatch)
             assertThat(endTime - startTime).isLessThan(200);
+
+            // Wait for async processing to complete
+            assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
         }
     }
 
     @Nested
     @DisplayName("Additional Edge Case Tests")
     class AdditionalEdgeCaseTests {
+
+        @BeforeEach
+        void setUpAdditionalEdgeCaseTests() {
+            // For these tests, executeAsync should immediately execute the runnable
+            lenient().doAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return null;
+            }).when(asyncUtility).executeAsync(any());
+        }
 
         @Test
         @DisplayName("Should handle invalid leave type in command text")
@@ -842,15 +920,23 @@ class SlackLeaveOrchestratorTest {
             SlackCommandRequest slackRequest = createValidSlackCommandRequest();
             slackRequest.setText("invalid_type");
 
-            SlackViewOpenResponse openResponse = new SlackViewOpenResponse();
-            openResponse.setOk(true);
-            when(slackApiClient.openModal(any(), any())).thenReturn(openResponse);
+            // Mock the AI parsing to fail
+            when(leaveParsingService.parseLeaveRequest(anyString(), anyString())).thenReturn(
+                    one.june.leave_management.application.genai.dto.ParseResult.builder()
+                            .failure("Invalid leave type")
+                            .build()
+            );
+
+            SlackMessageResponse messageResponse = new SlackMessageResponse();
+            messageResponse.setTs(TEST_THREAD_TS);
+            when(slackApiClient.postMessage(any(), any())).thenReturn(messageResponse);
 
             // When
             orchestrator.handleSlashCommand(slackRequest);
 
-            // Then - Should still open modal with default values
-            verify(slackApiClient, times(1)).openModal(any(), any());
+            // Then - Should post thread anchor and error message
+            verify(slackApiClient, times(1)).postMessage(any(), any());
+            verify(slackApiClient, times(1)).postThreadReply(any(), any(), any());
         }
 
         @Test
@@ -876,7 +962,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).postThreadReply(any(), any(), any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then - Should handle exception gracefully
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -926,8 +1012,8 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).postThreadReply(any(), any(), any());
 
             // When - Process concurrently
-            orchestrator.processLeaveRequestAsync(request1, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
-            orchestrator.processLeaveRequestAsync(request2, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(request1, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(request2, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then - Both should complete
             assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
@@ -955,7 +1041,7 @@ class SlackLeaveOrchestratorTest {
             }).when(slackApiClient).postThreadReply(any(), any(), any());
 
             // When
-            orchestrator.processLeaveRequestAsync(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
+            orchestrator.processLeaveRequest(leaveRequest, TEST_CHANNEL_ID, TEST_THREAD_TS, TEST_USER_ID);
 
             // Then
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -976,7 +1062,7 @@ class SlackLeaveOrchestratorTest {
             when(slackApiClient.openModal(any(), modalCaptor.capture())).thenReturn(openResponse);
 
             // When
-            orchestrator.openLeaveApplicationModalAsync(slackRequest, threadTs);
+            orchestrator.openLeaveApplicationModal(slackRequest, threadTs);
 
             Thread.sleep(500); // Wait for async processing
 
@@ -1163,6 +1249,7 @@ class SlackLeaveOrchestratorTest {
         request.setDateRange(new DateRange(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 5)));
         request.setSourceType(SourceType.SLACK);
         request.setSourceId("slack-source-123");
+        request.setStatus(LeaveStatus.REQUESTED);
         return request;
     }
 
@@ -1174,6 +1261,7 @@ class SlackLeaveOrchestratorTest {
         request.setDateRange(new DateRange(startDate, endDate));
         request.setSourceType(SourceType.SLACK);
         request.setSourceId("slack-source-123");
+        request.setStatus(LeaveStatus.REQUESTED);
         return request;
     }
 
@@ -1704,6 +1792,433 @@ class SlackLeaveOrchestratorTest {
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to create block action payload with unknown action_id", e);
+        }
+    }
+
+    // Helper methods for new tests
+
+    private SlackTeam createSlackTeam(String teamId) {
+        return SlackTeam.builder()
+                .id(teamId)
+                .domain("example")
+                .build();
+    }
+
+    private SlackUser createSlackUser(String userId) {
+        return SlackUser.builder()
+                .id(userId)
+                .username("testuser")
+                .name("Test User")
+                .teamId("T12345")
+                .build();
+    }
+
+    private SlackChannel createSlackChannel(String channelId) {
+        return SlackChannel.builder()
+                .id(channelId)
+                .name("test-channel")
+                .build();
+    }
+
+    private SlackMessage createSlackMessage() {
+        return SlackMessage.builder()
+                .type("message")
+                .subtype("bot_message")
+                .ts("1234567890.123456")
+                .botId("B12345")
+                .text("Test message")
+                .build();
+    }
+
+    private LeaveIngestionCommand createValidLeaveIngestionCommand() {
+        return LeaveIngestionCommand.builder()
+                .sourceType(SourceType.SLACK)
+                .sourceId("slack-req-12345")
+                .userId(TEST_USER_ID)
+                .dateRange(DateRange.builder()
+                        .startDate(LocalDate.of(2025, 1, 15))
+                        .endDate(LocalDate.of(2025, 1, 15))
+                        .build())
+                .durationType(LeaveDurationType.FULL_DAY)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .build();
+    }
+
+    private LeaveDto createLeaveDto() {
+        EmployeeDto employee = EmployeeDto.builder()
+                .id(UUID.randomUUID())
+                .slackId(TEST_USER_ID)
+                .build();
+
+        return LeaveDto.builder()
+                .id(UUID.randomUUID())
+                .employee(employee)
+                .dateRange(DateRange.builder()
+                        .startDate(LocalDate.of(2025, 1, 15))
+                        .endDate(LocalDate.of(2025, 1, 15))
+                        .build())
+                .durationType(LeaveDurationType.FULL_DAY)
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .build();
+    }
+
+    @Nested
+    @DisplayName("Slash Command Text vs No-Text Tests")
+    class SlashCommandTextTests {
+
+        @BeforeEach
+        void setUpForTextTests() {
+            // No special setup needed - AI flow is triggered by presence of text in command
+        }
+
+        @Test
+        @DisplayName("Should open modal immediately when no text provided")
+        void shouldOpenModalWhenNoText() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText(""); // No text
+
+            SlackMessageResponse response = new SlackMessageResponse();
+            response.setOk(true);
+            response.setTs("1234567890.123456");
+
+            when(slackApiClient.openModal(any(), any()))
+                    .thenReturn(SlackViewOpenResponse.builder()
+                            .view(SlackViewOpenResponse.SlackViewResponse.builder().build())
+                            .build());
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).openModal(eq(slackRequest.getTriggerId()), any());
+        }
+
+        @Test
+        @DisplayName("Should trigger AI flow when text is provided")
+        void shouldTriggerAiFlowWhenTextProvided() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("tomorrow");
+
+            SlackMessageResponse anchorResponse = new SlackMessageResponse();
+            anchorResponse.setOk(true);
+            anchorResponse.setChannel(TEST_CHANNEL_ID);
+            anchorResponse.setTs("1234567890.123456");
+
+            when(slackApiClient.postMessage(eq(TEST_CHANNEL_ID), any()))
+                    .thenReturn(anchorResponse);
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).postMessage(eq(TEST_CHANNEL_ID), any());
+        }
+
+        @Test
+        @DisplayName("Should post anchor message before AI parsing")
+        void shouldPostAnchorMessageBeforeAiParsing() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("annual leave next week");
+
+            SlackMessageResponse response = new SlackMessageResponse();
+            response.setOk(true);
+            response.setChannel(TEST_CHANNEL_ID);
+            response.setTs(TEST_THREAD_TS);
+
+            when(slackApiClient.postMessage(eq(TEST_CHANNEL_ID), any()))
+                    .thenReturn(response);
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).postMessage(eq(TEST_CHANNEL_ID), any());
+        }
+
+        @Test
+        @DisplayName("Should use AI when leave type is specified in text")
+        void shouldUseAiWhenLeaveTypeSpecified() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("annual leave");
+
+            SlackMessageResponse response = new SlackMessageResponse();
+            response.setOk(true);
+            response.setTs(TEST_THREAD_TS);
+
+            when(slackApiClient.postMessage(eq(TEST_CHANNEL_ID), any()))
+                    .thenReturn(response);
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).postMessage(eq(TEST_CHANNEL_ID), any());
+        }
+
+        @Test
+        @DisplayName("Should use AI when dates are specified in text")
+        void shouldUseAiWhenDatesSpecified() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("2024-01-15 2024-01-16");
+
+            SlackMessageResponse response = new SlackMessageResponse();
+            response.setOk(true);
+            response.setTs(TEST_THREAD_TS);
+
+            when(slackApiClient.postMessage(eq(TEST_CHANNEL_ID), any()))
+                    .thenReturn(response);
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).postMessage(eq(TEST_CHANNEL_ID), any());
+        }
+
+        @Test
+        @DisplayName("Should use AI when natural language date is used")
+        void shouldUseAiWithNaturalLanguageDate() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("tomorrow through Friday");
+
+            SlackMessageResponse response = new SlackMessageResponse();
+            response.setOk(true);
+            response.setTs(TEST_THREAD_TS);
+
+            when(slackApiClient.postMessage(eq(TEST_CHANNEL_ID), any()))
+                    .thenReturn(response);
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).postMessage(eq(TEST_CHANNEL_ID), any());
+        }
+
+        @Test
+        @DisplayName("Should handle empty text as no text")
+        void shouldHandleEmptyTextAsNoText() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("");
+
+            when(slackApiClient.openModal(any(), any()))
+                    .thenReturn(SlackViewOpenResponse.builder()
+                            .view(SlackViewOpenResponse.SlackViewResponse.builder().build())
+                            .build());
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).openModal(eq(slackRequest.getTriggerId()), any());
+            verify(slackApiClient, never()).postMessage(anyString(), any());
+        }
+
+        @Test
+        @DisplayName("Should handle whitespace-only text as no text")
+        void shouldHandleWhitespaceOnlyTextAsNoText() {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            slackRequest.setText("   ");
+
+            when(slackApiClient.openModal(any(), any()))
+                    .thenReturn(SlackViewOpenResponse.builder()
+                            .view(SlackViewOpenResponse.SlackViewResponse.builder().build())
+                            .build());
+
+            // When
+            orchestrator.handleSlashCommand(slackRequest);
+
+            // Then
+            verify(slackApiClient).openModal(eq(slackRequest.getTriggerId()), any());
+            verify(slackApiClient, never()).postMessage(anyString(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Modal Builder with Data Tests")
+    class ModalBuilderWithDataTests {
+
+        @Test
+        @DisplayName("Should build annual leave modal with parsed data")
+        void shouldBuildAnnualLeaveModalWithData() throws Exception {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            String threadTs = "1234567890.123456";
+
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(java.time.LocalDate.of(2025, 1, 15))
+                    .endDate(java.time.LocalDate.of(2025, 1, 15))
+                    .durationType(LeaveDurationType.FULL_DAY)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .reason("Test reason")
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackLeaveOrchestrator.class.getDeclaredMethod(
+                    "buildAnnualLeaveModalWithData", SlackCommandRequest.class, String.class, ParsedLeaveRequest.class);
+            method.setAccessible(true);
+            SlackModalView modalView = (SlackModalView) method.invoke(orchestrator, slackRequest, threadTs, parsedRequest);
+
+            // Then
+            assertThat(modalView).isNotNull();
+            assertThat(modalView.getTitle()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("Should build optional holiday modal with parsed data")
+        void shouldBuildOptionalHolidayModalWithData() throws Exception {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            String threadTs = "1234567890.123456";
+
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(java.time.LocalDate.of(2025, 1, 15))
+                    .endDate(java.time.LocalDate.of(2025, 1, 15))
+                    .durationType(LeaveDurationType.FULL_DAY)
+                    .leaveType(LeaveType.OPTIONAL_HOLIDAY)
+                    .reason("Optional holiday")
+                    .optionalHolidayName("Special Holiday")
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackLeaveOrchestrator.class.getDeclaredMethod(
+                    "buildOptionalHolidayModalWithData", SlackCommandRequest.class, String.class, ParsedLeaveRequest.class);
+            method.setAccessible(true);
+            SlackModalView modalView = (SlackModalView) method.invoke(orchestrator, slackRequest, threadTs, parsedRequest);
+
+            // Then
+            assertThat(modalView).isNotNull();
+            assertThat(modalView.getTitle()).isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("Confirmation Dialog Tests")
+    class ConfirmationDialogTests {
+
+        @Test
+        @DisplayName("Should show confirmation dialog")
+        void shouldShowConfirmationDialog() throws Exception {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            String threadTs = "1234567890.123456";
+
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(java.time.LocalDate.of(2025, 1, 15))
+                    .endDate(java.time.LocalDate.of(2025, 1, 15))
+                    .durationType(LeaveDurationType.FULL_DAY)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .reason("Test reason")
+                    .build();
+
+            ParseResult parseResult = ParseResult.builder()
+                    .parsedRequest(parsedRequest)
+                    .isSuccess(true)
+                    .confidenceScore(0.95)
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackLeaveOrchestrator.class.getDeclaredMethod(
+                    "showConfirmationDialog", SlackCommandRequest.class, ParseResult.class, String.class);
+            method.setAccessible(true);
+            method.invoke(orchestrator, slackRequest, parseResult, threadTs);
+
+            // Then
+            verify(slackApiClient).postThreadReply(eq(TEST_CHANNEL_ID), eq(threadTs), any(SlackMessageRequest.class));
+        }
+
+        @Test
+        @DisplayName("Should show confirmation dialog via response URL")
+        void shouldShowConfirmationDialogViaResponseUrl() throws Exception {
+            // Given
+            SlackCommandRequest slackRequest = createValidSlackCommandRequest();
+            String responseUrl = TEST_RESPONSE_URL;
+
+            ParsedLeaveRequest parsedRequest = ParsedLeaveRequest.builder()
+                    .startDate(java.time.LocalDate.of(2025, 1, 15))
+                    .endDate(java.time.LocalDate.of(2025, 1, 15))
+                    .durationType(LeaveDurationType.FULL_DAY)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .reason("Test reason")
+                    .build();
+
+            ParseResult parseResult = ParseResult.builder()
+                    .parsedRequest(parsedRequest)
+                    .isSuccess(true)
+                    .confidenceScore(0.95)
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackLeaveOrchestrator.class.getDeclaredMethod(
+                    "showConfirmationDialogViaResponseUrl", SlackCommandRequest.class, ParseResult.class, String.class);
+            method.setAccessible(true);
+            method.invoke(orchestrator, slackRequest, parseResult, responseUrl);
+
+            // Then
+            verify(slackApiClient).sendViaResponseUrl(eq(responseUrl), any(SlackMessageRequest.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("Message Update Tests")
+    class MessageUpdateTests {
+
+        @Test
+        @DisplayName("Should update confirmation message successfully")
+        void shouldUpdateConfirmationMessage() throws Exception {
+            // Given
+            String channelId = TEST_CHANNEL_ID;
+            String messageTs = "1234567890.123456";
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Updated message")
+                    .build();
+
+            when(slackApiClient.updateMessage(eq(channelId), eq(messageTs), any(SlackMessageRequest.class)))
+                    .thenReturn(new SlackMessageResponse());
+
+            // When
+            java.lang.reflect.Method method = SlackLeaveOrchestrator.class.getDeclaredMethod(
+                    "updateConfirmationMessage", String.class, String.class, SlackMessageRequest.class);
+            method.setAccessible(true);
+            method.invoke(orchestrator, channelId, messageTs, message);
+
+            // Then
+            verify(slackApiClient).updateMessage(eq(channelId), eq(messageTs), any(SlackMessageRequest.class));
+        }
+
+        @Test
+        @DisplayName("Should build confirmation message with all details")
+        void shouldBuildConfirmationMessage() throws Exception {
+            // Given
+            ParsedLeaveRequest request = ParsedLeaveRequest.builder()
+                    .startDate(java.time.LocalDate.of(2025, 1, 15))
+                    .endDate(java.time.LocalDate.of(2025, 1, 15))
+                    .durationType(LeaveDurationType.FULL_DAY)
+                    .leaveType(LeaveType.ANNUAL_LEAVE)
+                    .reason("Test reason for leave")
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackLeaveOrchestrator.class.getDeclaredMethod(
+                    "buildConfirmationMessage", ParsedLeaveRequest.class);
+            method.setAccessible(true);
+            String message = (String) method.invoke(orchestrator, request);
+
+            // Then
+            assertThat(message).isNotNull();
+            assertThat(message).contains("*Leave Request Details*");
+            assertThat(message).contains("Jan 15, 2025");
+            assertThat(message).contains("Test reason for leave");
         }
     }
 }

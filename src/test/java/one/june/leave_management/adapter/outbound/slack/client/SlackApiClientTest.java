@@ -3,10 +3,12 @@ package one.june.leave_management.adapter.outbound.slack.client;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackModalView;
+import one.june.leave_management.adapter.outbound.slack.dto.SlackUsersListResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewOpenResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateRequest;
 import one.june.leave_management.adapter.outbound.slack.dto.SlackViewUpdateResponse;
 import one.june.leave_management.adapter.outbound.slack.dto.composition.SlackText;
+import one.june.leave_management.application.slack.dto.SlackUserDto;
 import one.june.leave_management.config.SlackProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpEntity;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +26,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -1566,5 +1570,849 @@ class SlackApiClientTest {
             // The fact that the request was successful proves externalId was not included
             assertThat(capturedRequest.getView().getType()).isEqualTo("modal");
         }
+    }
+
+    @Nested
+    @DisplayName("postErrorMessage() Edge Cases")
+    class PostErrorMessageEdgeCases {
+
+        @Test
+        @DisplayName("Should handle null response URL gracefully")
+        void shouldHandleNullResponseUrl() {
+            // Given
+            String responseUrl = null;
+            String errorMessage = "Test error";
+
+            // When & Then - Should not throw, just log and return
+            slackApiClient.postErrorMessage(responseUrl, errorMessage);
+            // No exception thrown
+            verify(restTemplate, never()).exchange(anyString(), any(HttpMethod.class), any(HttpEntity.class), any(Class.class));
+        }
+
+        @Test
+        @DisplayName("Should handle empty response URL gracefully")
+        void shouldHandleEmptyResponseUrl() {
+            // Given
+            String responseUrl = "   ";
+            String errorMessage = "Test error";
+
+            // When & Then
+            slackApiClient.postErrorMessage(responseUrl, errorMessage);
+            verify(restTemplate, never()).exchange(anyString(), any(HttpMethod.class), any(HttpEntity.class), any(Class.class));
+        }
+
+        @Test
+        @DisplayName("Should handle null error message gracefully")
+        void shouldHandleNullErrorMessage() {
+            // Given
+            String responseUrl = "https://hooks.slack.com/commands/1234/5678";
+            String errorMessage = null;
+
+            // When & Then
+            slackApiClient.postErrorMessage(responseUrl, errorMessage);
+            verify(restTemplate, never()).exchange(anyString(), any(HttpMethod.class), any(HttpEntity.class), any(Class.class));
+        }
+
+        @Test
+        @DisplayName("Should handle empty error message gracefully")
+        void shouldHandleEmptyErrorMessage() {
+            // Given
+            String responseUrl = "https://hooks.slack.com/commands/1234/5678";
+            String errorMessage = "   ";
+
+            // When & Then
+            slackApiClient.postErrorMessage(responseUrl, errorMessage);
+            verify(restTemplate, never()).exchange(anyString(), any(HttpMethod.class), any(HttpEntity.class), any(Class.class));
+        }
+
+        @Test
+        @DisplayName("Should handle HTTP errors when posting error message")
+        void shouldHandleHttpErrorsWhenPostingError() {
+            // Given
+            String responseUrl = "https://hooks.slack.com/commands/1234/5678";
+            String errorMessage = "Test error";
+
+            when(restTemplate.exchange(
+                    eq(responseUrl),
+                    eq(HttpMethod.POST),
+                    any(HttpEntity.class),
+                    eq(String.class)
+            )).thenThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST));
+
+            // When & Then - Should log but not throw
+            slackApiClient.postErrorMessage(responseUrl, errorMessage);
+            // Exception is caught and logged, not re-thrown
+        }
+    }
+
+    @Nested
+    @DisplayName("updateMessage() Validation Tests")
+    class UpdateMessageValidationTests {
+
+        @Test
+        @DisplayName("Should validate message timestamp is not null")
+        void shouldValidateMessageTimestamp() {
+            // Given
+            String channelId = "C12345";
+            String messageTs = null;
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Updated message")
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage(channelId, messageTs, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Message timestamp cannot be null or empty");
+        }
+
+        @Test
+        @DisplayName("Should validate message timestamp is not empty")
+        void shouldValidateMessageTimestampNotEmpty() {
+            // Given
+            String channelId = "C12345";
+            String messageTs = "   ";
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Updated message")
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage(channelId, messageTs, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Message timestamp cannot be null or empty");
+        }
+    }
+
+    @Nested
+    @DisplayName("postThreadReply() Validation Tests")
+    class PostThreadReplyValidationTests {
+
+        @Test
+        @DisplayName("Should validate thread timestamp is not null")
+        void shouldValidateThreadTimestamp() {
+            // Given
+            String channelId = "C12345";
+            String threadTs = null;
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Reply")
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.postThreadReply(channelId, threadTs, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Thread timestamp cannot be null or empty");
+        }
+
+        @Test
+        @DisplayName("Should validate thread timestamp is not empty")
+        void shouldValidateThreadTimestampNotEmpty() {
+            // Given
+            String channelId = "C12345";
+            String threadTs = "   ";
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Reply")
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.postThreadReply(channelId, threadTs, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Thread timestamp cannot be null or empty");
+        }
+    }
+
+    @Nested
+    @DisplayName("fetchWorkspaceUsers() Pagination Tests")
+    class FetchWorkspaceUsersPaginationTests {
+
+        @Test
+        @DisplayName("Should handle single page of users")
+        void shouldHandleSinglePageOfUsers() {
+            // Given
+            SlackUsersListResponse response = SlackUsersListResponse.builder()
+                    .ok(true)
+                    .members(java.util.List.of(
+                            createSlackUser("U001", "user1")
+                    ))
+                    .responseMetadata(SlackUsersListResponse.ResponseMetadata.builder()
+                            .nextCursor("") // No more pages
+                            .build())
+                    .build();
+
+            when(restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.GET),
+                    any(HttpEntity.class),
+                    eq(SlackUsersListResponse.class)
+            )).thenReturn(ResponseEntity.ok(response));
+
+            // When
+            java.util.List<SlackUserDto> users = slackApiClient.fetchWorkspaceUsers();
+
+            // Then
+            assertThat(users).hasSize(1);
+            verify(restTemplate, times(1)).exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("sendViaResponseUrl() Validation Tests")
+    class SendViaResponseUrlValidationTests {
+
+        @Test
+        @DisplayName("Should validate response URL is not null")
+        void shouldValidateResponseUrl() {
+            // Given
+            String responseUrl = null;
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Test message")
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.sendViaResponseUrl(responseUrl, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Response URL cannot be null or empty");
+        }
+
+        @Test
+        @DisplayName("Should validate message is not null")
+        void shouldValidateMessage() {
+            // Given
+            String responseUrl = "https://hooks.slack.com/commands/1234/5678";
+            SlackMessageRequest message = null;
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.sendViaResponseUrl(responseUrl, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Message cannot be null");
+        }
+
+        @Test
+        @DisplayName("Should validate response URL is not empty")
+        void shouldValidateResponseUrlNotEmpty() {
+            // Given
+            String responseUrl = "   ";
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Test message")
+                    .build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.sendViaResponseUrl(responseUrl, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Response URL cannot be null or empty");
+        }
+    }
+
+    @Nested
+    @DisplayName("updateMessage() Tests")
+    class UpdateMessageTests {
+
+        @Test
+        @DisplayName("Should update message successfully")
+        void shouldUpdateMessageSuccessfully() {
+            // Given
+            String channelId = "C12345";
+            String messageTs = "1234567890.123456";
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Updated text")
+                    .build();
+
+            SlackMessageResponse response = SlackMessageResponse.builder()
+                    .ok(true)
+                    .channel(channelId)
+                    .ts(messageTs)
+                    .message(SlackMessageResponse.SlackMessage.builder()
+                            .text("Updated text")
+                            .build())
+                    .build();
+
+            ResponseEntity<SlackMessageResponse> responseEntity = new ResponseEntity<>(response, HttpStatus.OK);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(SlackMessageResponse.class)))
+                    .thenReturn(responseEntity);
+
+            // When
+            slackApiClient.updateMessage(channelId, messageTs, message);
+
+            // Then
+            verify(restTemplate).exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(SlackMessageResponse.class));
+        }
+
+        @Test
+        @DisplayName("Should throw exception when bot token is null")
+        void shouldThrowExceptionWhenBotTokenNull() {
+            // Given
+            when(slackProperties.getBotToken()).thenReturn(null);
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Slack bot token is not configured");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when bot token is empty")
+        void shouldThrowExceptionWhenBotTokenEmpty() {
+            // Given
+            when(slackProperties.getBotToken()).thenReturn("   ");
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Slack bot token is not configured");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when channelId is null")
+        void shouldThrowExceptionWhenChannelIdNull() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage(null, "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Channel ID cannot be null or empty");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when channelId is empty")
+        void shouldThrowExceptionWhenChannelIdEmpty() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("   ", "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Channel ID cannot be null or empty");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when messageTs is null")
+        void shouldThrowExceptionWhenMessageTsNull() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", null, message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Message timestamp cannot be null or empty");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when messageTs is empty")
+        void shouldThrowExceptionWhenMessageTsEmpty() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "   ", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Message timestamp cannot be null or empty");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when message is null")
+        void shouldThrowExceptionWhenMessageNull() {
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "123456", null))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Message request cannot be null");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when API response is null")
+        void shouldThrowExceptionWhenResponseNull() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+            ResponseEntity<SlackMessageResponse> responseEntity = new ResponseEntity<>(HttpStatus.OK);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(SlackMessageResponse.class)))
+                    .thenReturn(responseEntity);
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Null response from Slack API");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when API returns ok=false")
+        void shouldThrowExceptionWhenApiReturnsNotOk() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+            SlackMessageResponse response = SlackMessageResponse.builder()
+                    .ok(false)
+                    .error("Some error")
+                    .build();
+
+            ResponseEntity<SlackMessageResponse> responseEntity = new ResponseEntity<>(response, HttpStatus.OK);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(SlackMessageResponse.class)))
+                    .thenReturn(responseEntity);
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Slack API error");
+        }
+
+        @Test
+        @DisplayName("Should wrap RestClientException in RuntimeException")
+        void shouldWrapRestClientException() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(SlackMessageResponse.class)))
+                    .thenThrow(new RestClientException("Connection error"));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("HTTP error calling Slack API");
+        }
+
+        @Test
+        @DisplayName("Should wrap generic exception in RuntimeException")
+        void shouldWrapGenericException() {
+            // Given
+            SlackMessageRequest message = SlackMessageRequest.builder().text("Test").build();
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(SlackMessageResponse.class)))
+                    .thenThrow(new RuntimeException("Unexpected error"));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.updateMessage("C123", "123456", message))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Unexpected error calling Slack API");
+        }
+
+        @Test
+        @DisplayName("Should set channel and timestamp on message before sending")
+        void shouldSetChannelAndTimestampOnMessage() {
+            // Given
+            String channelId = "C12345";
+            String messageTs = "1234567890.123456";
+            SlackMessageRequest message = SlackMessageRequest.builder()
+                    .text("Updated text")
+                    .build();
+
+            SlackMessageResponse response = SlackMessageResponse.builder()
+                    .ok(true)
+                    .build();
+
+            ResponseEntity<SlackMessageResponse> responseEntity = new ResponseEntity<>(response, HttpStatus.OK);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(SlackMessageResponse.class)))
+                    .thenReturn(responseEntity);
+
+            // When
+            slackApiClient.updateMessage(channelId, messageTs, message);
+
+            // Then
+            ArgumentCaptor<HttpEntity<?>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate).exchange(anyString(), eq(HttpMethod.POST), entityCaptor.capture(), eq(SlackMessageResponse.class));
+
+            SlackMessageRequest capturedRequest = (SlackMessageRequest) entityCaptor.getValue().getBody();
+            assertThat(capturedRequest.getChannel()).isEqualTo(channelId);
+            assertThat(capturedRequest.getTs()).isEqualTo(messageTs);
+        }
+    }
+
+    @Nested
+    @DisplayName("fetchWorkspaceUsers() Tests")
+    class FetchWorkspaceUsersTests {
+
+        @Test
+        @DisplayName("Should fetch single page of users")
+        void shouldFetchSinglePageOfUsers() {
+            // Given
+            String botToken = "xoxb-test-token";
+            when(slackProperties.getBotToken()).thenReturn(botToken);
+
+            SlackUsersListResponse response = SlackUsersListResponse.builder()
+                    .ok(true)
+                    .members(java.util.List.of(
+                            createSlackUser("U001", "user1"),
+                            createSlackUser("U002", "user2")
+                    ))
+                    .responseMetadata(SlackUsersListResponse.ResponseMetadata.builder()
+                            .nextCursor("") // No more pages
+                            .build())
+                    .build();
+
+            ResponseEntity<SlackUsersListResponse> responseEntity = new ResponseEntity<>(response, HttpStatus.OK);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class)))
+                    .thenReturn(responseEntity);
+
+            // When
+            java.util.List<one.june.leave_management.application.slack.dto.SlackUserDto> users = slackApiClient.fetchWorkspaceUsers();
+
+            // Then
+            assertThat(users).hasSize(2);
+            verify(restTemplate, times(1)).exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class));
+        }
+
+        @Test
+        @DisplayName("Should fetch multiple pages of users with pagination")
+        void shouldFetchMultiplePagesWithPagination() {
+            // Given
+            String botToken = "xoxb-test-token";
+            when(slackProperties.getBotToken()).thenReturn(botToken);
+
+            SlackUsersListResponse page1Response = SlackUsersListResponse.builder()
+                    .ok(true)
+                    .members(java.util.List.of(
+                            createSlackUser("U001", "user1")
+                    ))
+                    .responseMetadata(SlackUsersListResponse.ResponseMetadata.builder()
+                            .nextCursor("cursor123")
+                            .build())
+                    .build();
+
+            SlackUsersListResponse page2Response = SlackUsersListResponse.builder()
+                    .ok(true)
+                    .members(java.util.List.of(
+                            createSlackUser("U002", "user2")
+                    ))
+                    .responseMetadata(SlackUsersListResponse.ResponseMetadata.builder()
+                            .nextCursor("") // No more pages
+                            .build())
+                    .build();
+
+            // Mock first call (without cursor)
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class)))
+                    .thenReturn(new ResponseEntity<>(page1Response, HttpStatus.OK))
+                    // Mock second call (with cursor)
+                    .thenReturn(new ResponseEntity<>(page2Response, HttpStatus.OK));
+
+            // When
+            java.util.List<one.june.leave_management.application.slack.dto.SlackUserDto> users = slackApiClient.fetchWorkspaceUsers();
+
+            // Then
+            assertThat(users).hasSize(2);
+            verify(restTemplate, times(2)).exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class));
+        }
+
+        @Test
+        @DisplayName("Should return empty list when no users")
+        void shouldReturnEmptyListWhenNoUsers() {
+            // Given
+            String botToken = "xoxb-test-token";
+            when(slackProperties.getBotToken()).thenReturn(botToken);
+
+            SlackUsersListResponse response = SlackUsersListResponse.builder()
+                    .ok(true)
+                    .members(java.util.List.of())
+                    .responseMetadata(SlackUsersListResponse.ResponseMetadata.builder()
+                            .nextCursor("")
+                            .build())
+                    .build();
+
+            ResponseEntity<SlackUsersListResponse> responseEntity = new ResponseEntity<>(response, HttpStatus.OK);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class)))
+                    .thenReturn(responseEntity);
+
+            // When
+            java.util.List<one.june.leave_management.application.slack.dto.SlackUserDto> users = slackApiClient.fetchWorkspaceUsers();
+
+            // Then
+            assertThat(users).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Should throw exception when API returns ok=false")
+        void shouldThrowExceptionWhenApiReturnsNotOk() {
+            // Given
+            String botToken = "xoxb-test-token";
+            when(slackProperties.getBotToken()).thenReturn(botToken);
+
+            SlackUsersListResponse response = SlackUsersListResponse.builder()
+                    .ok(false)
+                    .error("Invalid auth")
+                    .build();
+
+            ResponseEntity<SlackUsersListResponse> responseEntity = new ResponseEntity<>(response, HttpStatus.OK);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class)))
+                    .thenReturn(responseEntity);
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.fetchWorkspaceUsers())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Slack API error");
+        }
+
+        @Test
+        @DisplayName("Should handle RestClientException gracefully")
+        void shouldHandleRestClientException() {
+            // Given
+            String botToken = "xoxb-test-token";
+            when(slackProperties.getBotToken()).thenReturn(botToken);
+
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class), eq(SlackUsersListResponse.class)))
+                    .thenThrow(new RestClientException("Network error"));
+
+            // When & Then
+            assertThatThrownBy(() -> slackApiClient.fetchWorkspaceUsers())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("HTTP error calling Slack API");
+        }
+    }
+
+    @Nested
+    @DisplayName("mapToSlackUserDto() Tests")
+    class MapToSlackUserDtoTests {
+
+        @Test
+        @DisplayName("Should map user with all fields present")
+        void shouldMapUserWithAllFields() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(false)
+                    .presence("active")
+                    .profile(SlackUsersListResponse.Profile.builder()
+                            .realName("Test User")
+                            .displayName("Test Display")
+                            .email("test@example.com")
+                            .build())
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then
+            assertThat(dto.getSlackId()).isEqualTo("U123");
+            assertThat(dto.getName()).isEqualTo("Test User");
+            assertThat(dto.getDisplayName()).isEqualTo("Test Display");
+            assertThat(dto.getTeamId()).isEqualTo("T456");
+            assertThat(dto.getIsBot()).isFalse();
+            assertThat(dto.getDeleted()).isFalse();
+            assertThat(dto.getIsActive()).isTrue();
+            assertThat(dto.getEmail()).isEqualTo("test@example.com");
+        }
+
+        @Test
+        @DisplayName("Should use name fallback when profile is null")
+        void shouldUseNameFallbackWhenProfileNull() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(false)
+                    .presence("active")
+                    .profile(null)
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then
+            assertThat(dto.getName()).isEqualTo("testuser");
+            assertThat(dto.getDisplayName()).isEqualTo("testuser");
+        }
+
+        @Test
+        @DisplayName("Should mark user as active when presence is active")
+        void shouldMarkUserAsActiveWhenPresenceActive() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(false)
+                    .presence("active")
+                    .profile(SlackUsersListResponse.Profile.builder()
+                            .realName("Test User")
+                            .displayName("Test Display")
+                            .build())
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then
+            assertThat(dto.getIsActive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Should mark user as active when not deleted, not bot")
+        void shouldMarkUserAsActiveWhenNotDeletedNotBot() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(false)
+                    .presence("away")
+                    .profile(SlackUsersListResponse.Profile.builder()
+                            .realName("Test User")
+                            .displayName("Test Display")
+                            .build())
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then
+            assertThat(dto.getIsActive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Should mark user as inactive when deleted")
+        void shouldMarkUserAsInactiveWhenDeleted() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(true)
+                    .isBot(false)
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then
+            assertThat(dto.getIsActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("Should mark user as inactive when is bot")
+        void shouldMarkUserAsInactiveWhenIsBot() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(true)
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then
+            assertThat(dto.getIsActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("Should handle null email in profile")
+        void shouldHandleNullEmailInProfile() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(false)
+                    .profile(SlackUsersListResponse.Profile.builder()
+                            .realName("Test User")
+                            .displayName("Test Display")
+                            .email(null)
+                            .build())
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then
+            assertThat(dto.getEmail()).isNull();
+        }
+
+        @Test
+        @DisplayName("Should handle null real name in profile")
+        void shouldHandleNullRealNameInProfile() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(false)
+                    .profile(SlackUsersListResponse.Profile.builder()
+                            .realName(null)
+                            .displayName("Test Display")
+                            .email(null)
+                            .build())
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then - if profile exists but realName is null, name will be null (doesn't fall back to user name)
+            assertThat(dto.getName()).isNull();
+        }
+
+        @Test
+        @DisplayName("Should handle null display name in profile")
+        void shouldHandleNullDisplayNameInProfile() throws Exception {
+            // Given
+            SlackUsersListResponse.SlackUser slackUser = SlackUsersListResponse.SlackUser.builder()
+                    .id("U123")
+                    .name("testuser")
+                    .teamId("T456")
+                    .deleted(false)
+                    .isBot(false)
+                    .profile(SlackUsersListResponse.Profile.builder()
+                            .realName("Test User")
+                            .displayName(null)
+                            .email(null)
+                            .build())
+                    .build();
+
+            // When
+            java.lang.reflect.Method method = SlackApiClient.class.getDeclaredMethod("mapToSlackUserDto", SlackUsersListResponse.SlackUser.class);
+            method.setAccessible(true);
+            one.june.leave_management.application.slack.dto.SlackUserDto dto =
+                    (one.june.leave_management.application.slack.dto.SlackUserDto) method.invoke(slackApiClient, slackUser);
+
+            // Then - if profile exists but displayName is null, displayName will be null (doesn't fall back to user name)
+            assertThat(dto.getDisplayName()).isNull();
+        }
+    }
+
+    // Helper methods for fetchWorkspaceUsers tests
+
+    private SlackUsersListResponse.SlackUser createSlackUser(String id, String name) {
+        SlackUsersListResponse.Profile profile = SlackUsersListResponse.Profile.builder()
+                .realName(name)
+                .displayName(name)
+                .email(name.toLowerCase().replace(" ", "") + "@example.com")
+                .build();
+
+        return SlackUsersListResponse.SlackUser.builder()
+                .id(id)
+                .name(name)
+                .teamId("T123")
+                .profile(profile)
+                .deleted(false)
+                .isBot(false)
+                .presence("active")
+                .build();
     }
 }

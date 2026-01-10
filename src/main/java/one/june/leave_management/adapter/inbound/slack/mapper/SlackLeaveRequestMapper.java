@@ -5,6 +5,7 @@ import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionValue
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewSubmissionRequest;
 import one.june.leave_management.adapter.inbound.slack.util.SlackMetadataUtil;
 import one.june.leave_management.adapter.inbound.web.dto.LeaveIngestionRequest;
+import one.june.leave_management.application.genai.dto.ParsedLeaveRequest;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
 import one.june.leave_management.common.exception.SlackPayloadParseException;
 import one.june.leave_management.common.model.DateRange;
@@ -174,6 +175,66 @@ public class SlackLeaveRequestMapper {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Maps a ParsedLeaveRequest from AI parsing to a leave ingestion request
+     * <p>
+     * This method is used for AI-powered leave requests where the leave details
+     * have been extracted from natural language. It follows the same pattern as
+     * the view-based mapper:
+     * <ul>
+     *   <li>Extracts Slack user ID from the parsed request</li>
+     *   <li>Fetches the employee using the Slack ID</li>
+     *   <li>Maps all fields to LeaveIngestionRequest using employee UUID</li>
+     * </ul>
+     *
+     * @param parsedRequest The AI-parsed leave request
+     * @return Mapped LeaveIngestionRequest
+     * @throws SlackPayloadParseException if employee not found or required fields are missing
+     */
+    public LeaveIngestionRequest toLeaveIngestionRequest(ParsedLeaveRequest parsedRequest) {
+        log.debug("Mapping ParsedLeaveRequest to LeaveIngestionRequest");
+
+        // Extract Slack user ID from parsed request
+        String slackUserId = parsedRequest.getSlackUserId();
+        if (slackUserId == null || slackUserId.isBlank()) {
+            throw new SlackPayloadParseException("Slack user ID is required in parsed request");
+        }
+        log.debug("Extracted Slack user ID from parsed request: {}", slackUserId);
+
+        // Validate that employee exists with this Slack ID and get the employee's UUID
+        Employee employee = employeeRepository.findBySlackId(slackUserId)
+                .orElseThrow(() -> new SlackPayloadParseException(
+                        String.format("Employee not found for Slack user ID: %s", slackUserId)));
+        log.debug("Found employee with UUID: {} for Slack user ID: {}", employee.getId(), slackUserId);
+
+        // Build date range from parsed dates
+        DateRange dateRange = DateRange.builder()
+                .startDate(parsedRequest.getStartDate())
+                .endDate(parsedRequest.getEndDate())
+                .build();
+        log.debug("Built date range: {} to {}", parsedRequest.getStartDate(), parsedRequest.getEndDate());
+
+        // Determine duration type (default to FULL_DAY if not specified)
+        LeaveDurationType durationType = parsedRequest.getDurationType() != null
+                ? parsedRequest.getDurationType()
+                : LeaveDurationType.FULL_DAY;
+        log.debug("Using duration type: {}", durationType);
+
+        // Build the leave ingestion request
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.SLACK)
+                .sourceId("slack-ai-" + System.currentTimeMillis())
+                .userId(employee.getId().toString()) // Store employee's internal UUID
+                .dateRange(dateRange)
+                .type(parsedRequest.getLeaveType())
+                .status(LeaveStatus.REQUESTED) // AI-parsed requests start as REQUESTED (not APPROVED)
+                .durationType(durationType)
+                .build();
+
+        log.debug("Successfully mapped ParsedLeaveRequest to LeaveIngestionRequest");
+        return request;
     }
 
     /**

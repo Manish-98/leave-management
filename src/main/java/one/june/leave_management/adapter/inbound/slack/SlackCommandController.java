@@ -96,7 +96,6 @@ public class SlackCommandController {
         // Step 3: Route to orchestrator for business logic
         slackLeaveOrchestrator.handleSlashCommand(slackRequest);
 
-        // Step 4: ACK immediately with 200 OK
         return ResponseEntity.ok().build();
     }
 }

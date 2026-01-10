@@ -339,6 +339,68 @@ public class SlackApiClient {
     }
 
     /**
+     * Posts a message to Slack using the response_url.
+     * <p>
+     * This is used to send messages as threaded replies to slash commands.
+     * The message appears in-channel and creates a thread with the original command.
+     * <p>
+     * Slack API reference: https://api.slack.com/interactivity/handling#message_responses
+     *
+     * @param responseUrl The response_url from the Slack payload
+     * @param message      The message to post
+     */
+    public void sendViaResponseUrl(String responseUrl, SlackMessageRequest message) {
+        log.info("Sending message via response_url");
+
+        // Validate inputs
+        if (responseUrl == null || responseUrl.trim().isEmpty()) {
+            log.error("Response URL is null or empty, cannot send message");
+            throw new RuntimeException("Response URL cannot be null or empty");
+        }
+
+        if (message == null) {
+            log.error("Message is null");
+            throw new RuntimeException("Message cannot be null");
+        }
+
+        try {
+            // Set up headers with content type
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("application/json; charset=UTF-8"));
+
+            // Create the HTTP entity
+            HttpEntity<SlackMessageRequest> entity = new HttpEntity<>(message, headers);
+
+            log.debug("Sending message to Slack via response_url...");
+
+            // Make the API call
+            ResponseEntity<String> responseEntity = restTemplate.exchange(
+                    responseUrl,
+                    HttpMethod.POST,
+                    entity,
+                    String.class
+            );
+
+            log.info("Message sent via response_url. Status: {}", responseEntity.getStatusCode());
+
+            if (!responseEntity.getStatusCode().is2xxSuccessful()) {
+                log.error("Slack returned non-2xx status when sending message via response_url: {}",
+                        responseEntity.getStatusCode());
+                throw new RuntimeException("Failed to send message via response_url: " + responseEntity.getStatusCode());
+            }
+
+        } catch (RestClientException e) {
+            log.error("HTTP error sending message via response_url. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage());
+            throw new RuntimeException("Failed to send message via response_url", e);
+        } catch (Exception e) {
+            log.error("Unexpected error sending message via response_url. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage());
+            throw new RuntimeException("Unexpected error sending message via response_url", e);
+        }
+    }
+
+    /**
      * Posts a message to a Slack channel using the chat.postMessage API
      * <p>
      * This method is used to create thread anchor messages or post updates.
@@ -453,6 +515,100 @@ public class SlackApiClient {
 
         // Reuse postMessage logic
         return postMessage(channelId, message);
+    }
+
+    /**
+     * Updates an existing message in a Slack channel
+     * <p>
+     * This method is used to replace message content, for example to remove buttons
+     * after they've been clicked and show a status update instead.
+     * <p>
+     * Slack API reference: <a href="https://api.slack.com/methods/chat.update">...</a>
+     *
+     * @param channelId The channel ID where the message exists
+     * @param messageTs The timestamp (ts) of the message to update
+     * @param message   The updated message request
+     * @return The response from Slack API
+     * @throws RuntimeException if the API call fails
+     */
+    public SlackMessageResponse updateMessage(String channelId, String messageTs, SlackMessageRequest message) {
+        log.info("Updating message in channel: {}, message_ts: {}", channelId, messageTs);
+
+        String botToken = slackProperties.getBotToken();
+
+        // Validate inputs
+        if (botToken == null || botToken.trim().isEmpty()) {
+            log.error("Slack bot token is null or empty. Please configure slack.bot-token property.");
+            throw new RuntimeException("Slack bot token is not configured");
+        }
+
+        if (channelId == null || channelId.trim().isEmpty()) {
+            log.error("Channel ID is null or empty");
+            throw new RuntimeException("Channel ID cannot be null or empty");
+        }
+
+        if (messageTs == null || messageTs.trim().isEmpty()) {
+            log.error("Message timestamp is null or empty");
+            throw new RuntimeException("Message timestamp cannot be null or empty");
+        }
+
+        if (message == null) {
+            log.error("Message request is null");
+            throw new RuntimeException("Message request cannot be null");
+        }
+
+        String fullApiUrl = slackProperties.getApiBaseUrl() + "/chat.update";
+
+        try {
+            // Set up headers with authorization and content type
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("application/json; charset=UTF-8"));
+            headers.setBearerAuth(botToken);
+
+            // Set channel and ts in the message
+            message.setChannel(channelId);
+            message.setTs(messageTs);
+
+            // Create the HTTP entity with headers and body
+            HttpEntity<SlackMessageRequest> entity = new HttpEntity<>(message, headers);
+
+            log.debug("Sending update request to Slack API...");
+
+            // Make the API call
+            ResponseEntity<SlackMessageResponse> responseEntity = restTemplate.exchange(
+                    fullApiUrl,
+                    HttpMethod.POST,
+                    entity,
+                    SlackMessageResponse.class
+            );
+
+            log.debug("Received update response from Slack API. Status: {}", responseEntity.getStatusCode());
+
+            SlackMessageResponse response = responseEntity.getBody();
+
+            if (response == null) {
+                log.error("Received null response body from Slack chat.update API");
+                throw new RuntimeException("Null response from Slack API");
+            }
+
+            if (!response.isOk()) {
+                log.error("Slack chat.update API returned error: {}. Full response: {}",
+                        response.getError(), response);
+                throw new RuntimeException("Slack API error: " + response.getError());
+            }
+
+            log.info("Successfully updated message. Message timestamp: {}", response.getTs());
+            return response;
+
+        } catch (RestClientException e) {
+            log.error("HTTP error calling Slack chat.update API. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("HTTP error calling Slack API: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Unexpected error calling Slack chat.update API. Type: {}, Message: {}",
+                    e.getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("Unexpected error calling Slack API: " + e.getMessage(), e);
+        }
     }
 
     /**

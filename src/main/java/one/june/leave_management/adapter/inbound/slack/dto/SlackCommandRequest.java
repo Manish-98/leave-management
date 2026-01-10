@@ -29,4 +29,5 @@ public class SlackCommandRequest {
     private String teamDomain;
     private String responseUrl;
     private String apiAppId;
+    private String messageTs;  // Timestamp of the slash command message
 }

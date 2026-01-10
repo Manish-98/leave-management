@@ -53,6 +53,12 @@ public class SlackMessageRequest {
     private String threadTs;
 
     /**
+     * Message timestamp (used for chat.update API to identify which message to update)
+     */
+    @JsonProperty("ts")
+    private String ts;
+
+    /**
      * Message type (deprecated but sometimes required for compatibility)
      */
     @JsonProperty("mrkdwn")

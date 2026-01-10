@@ -1,5 +1,6 @@
 package one.june.leave_management.adapter.inbound.slack.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -18,6 +19,7 @@ import lombok.ToString;
 @NoArgsConstructor
 @AllArgsConstructor
 @ToString
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SlackAction {
 
     @JsonProperty("action_id")
@@ -40,6 +42,9 @@ public class SlackAction {
 
     @JsonProperty("value")
     private String value; // For buttons and some other elements
+
+    @JsonProperty("text")
+    private SlackSelectedOption.SlackOptionText text; // Button text object
 
     @JsonProperty("action_ts")
     private String actionTs; // Timestamp when action was triggered

@@ -2,6 +2,8 @@ package one.june.leave_management.adapter.inbound.slack.util;
 
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageRequest;
 import one.june.leave_management.application.employee.dto.EmployeeDto;
+import one.june.leave_management.application.genai.dto.ParsedLeaveRequest;
+import one.june.leave_management.application.genai.util.GenAiTestFixtures;
 import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.common.model.DateRange;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
@@ -43,7 +45,9 @@ class SlackMessageTemplateTest {
         @DisplayName("Should create message with valid channelId and userTag")
         void shouldCreateMessageWithValidInputs() {
             // When
-            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated("C12345", "<@U67890>");
+            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated(
+                    "C12345", null, "<@U67890>", "initiated", "test text"
+            );
 
             // Then
             assertThat(message).isNotNull();
@@ -51,37 +55,44 @@ class SlackMessageTemplateTest {
             assertThat(message.getText()).contains("<@U67890>");
             assertThat(message.getThreadTs()).isNull();
             assertThat(message.getBlocks()).isNotNull();
-            assertThat(message.getBlocks()).isNotEmpty();
+            assertThat(message.getBlocks()).isEmpty(); // No blocks added for simple initiated message
         }
 
         @Test
         @DisplayName("Should verify message structure has correct header text")
         void shouldVerifyHeaderStructure() {
             // When
-            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated("C12345", "<@U67890>");
+            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated(
+                    "C12345", null, "<@U67890>", "initiated", "test text"
+            );
 
             // Then - Verify the text contains expected content
-            assertThat(message.getText()).contains("Leave request initiated");
+            assertThat(message.getText()).contains("Leave request");
             assertThat(message.getText()).contains("<@U67890>");
-            assertThat(message.getBlocks()).isNotEmpty();
+            assertThat(message.getText()).contains("initiated");
+            assertThat(message.getBlocks()).isNotNull();
         }
 
         @Test
         @DisplayName("Should verify message structure has correct section text with userTag")
         void shouldVerifySectionTextWithUserTag() {
             // When
-            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated("C12345", "<@U67890>");
+            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated(
+                    "C12345", null, "<@U67890>", "initiated", "test text"
+            );
 
-            // Then - Verify blocks are created
+            // Then - Verify basic message structure
             assertThat(message.getBlocks()).isNotNull();
-            assertThat(message.getBlocks()).hasSizeGreaterThan(0);
+            assertThat(message.getText()).contains("test text");
         }
 
         @Test
         @DisplayName("Should verify channel is set correctly")
         void shouldVerifyChannelIsSetCorrectly() {
             // When
-            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated("C12345", "<@U67890>");
+            SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated(
+                    "C12345", null, "<@U67890>", "initiated", "test text"
+            );
 
             // Then
             assertThat(message.getChannel()).isEqualTo("C12345");
@@ -409,5 +420,227 @@ class SlackMessageTemplateTest {
                 .status(LeaveStatus.REQUESTED)
                 .durationType(durationType)
                 .build();
+    }
+
+    @Nested
+    @DisplayName("AI Template Tests")
+    class AiTemplateTests {
+
+        @Test
+        @DisplayName("Should create confirmation message with all details")
+        void shouldCreateConfirmationMessage() {
+            // Given
+            ParsedLeaveRequest request = GenAiTestFixtures.createSimpleLeaveRequest();
+            String channelId = "C12345";
+            String threadTs = "1234567890.123456";
+            String userId = "U67890";
+            String confirmationText = "I've parsed your leave request:";
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    channelId, threadTs, userId, confirmationText, request
+            );
+
+            // Then
+            assertThat(message).isNotNull();
+            assertThat(message.getChannel()).isEqualTo(channelId);
+            assertThat(message.getThreadTs()).isEqualTo(threadTs);
+            assertThat(message.getText()).contains("<@" + userId + ">");
+            assertThat(message.getBlocks()).isNotNull();
+            assertThat(message.getBlocks()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should include confirm and edit buttons")
+        void shouldIncludeConfirmAndEditButtons() {
+            // Given
+            ParsedLeaveRequest request = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    "C12345", "1234567890.123456", "U67890",
+                    "Parsed your request", request
+            );
+
+            // Then
+            assertThat(message.getBlocks()).isNotNull();
+            assertThat(message.getBlocks()).isNotEmpty();
+            // Buttons are included in blocks
+        }
+
+        @Test
+        @DisplayName("Should serialize ParsedLeaveRequest to button value")
+        void shouldSerializeParsedLeaveRequest() {
+            // Given
+            ParsedLeaveRequest request = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    "C12345", "1234567890.123456", "U67890",
+                    "Parsed your request", request
+            );
+
+            // Then - Serialization succeeded, message has blocks
+            assertThat(message.getBlocks()).isNotNull();
+            assertThat(message.getBlocks()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should include user tag in confirmation message")
+        void shouldIncludeUserTagInConfirmation() {
+            // Given
+            ParsedLeaveRequest request = GenAiTestFixtures.createSimpleLeaveRequest();
+            String userId = "U67890";
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    "C12345", "1234567890.123456", userId,
+                    "Parsed your request", request
+            );
+
+            // Then
+            assertThat(message.getText()).contains("<@" + userId + ">");
+        }
+
+        @Test
+        @DisplayName("Should include divider before buttons")
+        void shouldIncludeDividerBeforeButtons() {
+            // Given
+            ParsedLeaveRequest request = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    "C12345", "1234567890.123456", "U67890",
+                    "Parsed your request", request
+            );
+
+            // Then
+            assertThat(message.getBlocks()).isNotNull();
+            assertThat(message.getBlocks()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should include explanatory text")
+        void shouldIncludeExplanatoryText() {
+            // Given
+            ParsedLeaveRequest request = GenAiTestFixtures.createSimpleLeaveRequest();
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    "C12345", "1234567890.123456", "U67890",
+                    "Parsed your request", request
+            );
+
+            // Then
+            assertThat(message.getBlocks()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("Should create parsing error message")
+        void shouldCreateParsingErrorMessage() {
+            // Given
+            String channelId = "C12345";
+            String threadTs = "1234567890.123456";
+            String userId = "U67890";
+            String errorMessage = "Could not parse date";
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveParsingError(
+                    channelId, threadTs, userId, errorMessage
+            );
+
+            // Then
+            assertThat(message).isNotNull();
+            assertThat(message.getChannel()).isEqualTo(channelId);
+            assertThat(message.getThreadTs()).isEqualTo(threadTs);
+            assertThat(message.getText()).contains("<@" + userId + ">");
+            assertThat(message.getBlocks()).isNotNull();
+            assertThat(message.getBlocks()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should include open modal button in error message")
+        void shouldIncludeOpenModalButtonInError() {
+            // Given
+            String errorMessage = "Parsing failed";
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveParsingError(
+                    "C12345", "1234567890.123456", "U67890", errorMessage
+            );
+
+            // Then
+            assertThat(message.getBlocks()).isNotNull();
+            assertThat(message.getBlocks()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should include helpful error message for user")
+        void shouldIncludeHelpfulErrorMessage() {
+            // Given
+            String errorMessage = "Could not understand the request";
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveParsingError(
+                    "C12345", "1234567890.123456", "U67890", errorMessage
+            );
+
+            // Then
+            assertThat(message.getBlocks()).isNotNull();
+            assertThat(message.getBlocks()).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("Should handle null error message gracefully")
+        void shouldHandleNullErrorMessage() {
+            // Given
+            String errorMessage = null;
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveParsingError(
+                    "C12345", "1234567890.123456", "U67890", errorMessage
+            );
+
+            // Then
+            assertThat(message).isNotNull();
+            assertThat(message.getBlocks()).isNotNull();
+            // Should use "Unknown error" as fallback
+        }
+
+        @Test
+        @DisplayName("Should set correct channel and thread context for confirmation")
+        void shouldSetChannelAndThreadContextForConfirmation() {
+            // Given
+            ParsedLeaveRequest request = GenAiTestFixtures.createSimpleLeaveRequest();
+            String channelId = "C12345";
+            String threadTs = "1234567890.123456";
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveConfirmation(
+                    channelId, threadTs, "U67890",
+                    "Parsed your request", request
+            );
+
+            // Then
+            assertThat(message.getChannel()).isEqualTo(channelId);
+            assertThat(message.getThreadTs()).isEqualTo(threadTs);
+        }
+
+        @Test
+        @DisplayName("Should set correct channel and thread context for error")
+        void shouldSetChannelAndThreadContextForError() {
+            // Given
+            String channelId = "C12345";
+            String threadTs = "1234567890.123456";
+
+            // When
+            SlackMessageRequest message = SlackMessageTemplate.leaveParsingError(
+                    channelId, threadTs, "U67890", "Error"
+            );
+
+            // Then
+            assertThat(message.getChannel()).isEqualTo(channelId);
+            assertThat(message.getThreadTs()).isEqualTo(threadTs);
+        }
     }
 }

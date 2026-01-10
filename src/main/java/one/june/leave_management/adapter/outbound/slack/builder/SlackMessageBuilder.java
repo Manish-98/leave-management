@@ -130,6 +130,39 @@ public class SlackMessageBuilder {
     }
 
     /**
+     * Adds an actions block with a button to the message
+     * <p>
+     * Buttons allow users to perform actions with a single click.
+     *
+     * @param text  The button text
+     * @param actionId The action ID for the button
+     * @param value The value to send when button is clicked
+     * @param style The button style (primary, danger, or default)
+     * @return This builder instance for method chaining
+     */
+    public SlackMessageBuilder withButton(String text, String actionId, String value, String style) {
+        Map<String, Object> button = new HashMap<>();
+        button.put("type", "button");
+        button.put("text", Map.of(
+                "type", "plain_text",
+                "text", text,
+                "emoji", true
+        ));
+        button.put("action_id", actionId);
+        button.put("value", value);
+        if (style != null && !style.equals("default")) {
+            button.put("style", style);
+        }
+
+        Map<String, Object> actionsBlock = new HashMap<>();
+        actionsBlock.put("type", "actions");
+        actionsBlock.put("elements", List.of(button));
+
+        blocks.add(actionsBlock);
+        return this;
+    }
+
+    /**
      * Adds a custom block to the message
      * <p>
      * Allows adding pre-built blocks or custom block structures.
