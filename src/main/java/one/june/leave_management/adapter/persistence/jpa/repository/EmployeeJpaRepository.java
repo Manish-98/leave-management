@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -59,6 +60,16 @@ public interface EmployeeJpaRepository extends JpaRepository<EmployeeJpaEntity, 
      * @return page of employees matching the name
      */
     Page<EmployeeJpaEntity> findByNameContainingIgnoreCase(String name, Pageable pageable);
+
+    /**
+     * Search employees by name or slack display name (case-insensitive partial match)
+     * Returns employees where the name contains the query OR slackDisplayName contains the query
+     *
+     * @param name the name/query to search for
+     * @param slackDisplayName the slack display name/query to search for
+     * @return list of employees matching either field
+     */
+    List<EmployeeJpaEntity> findByNameContainingIgnoreCaseOrSlackDisplayNameContainingIgnoreCase(String name, String slackDisplayName);
 
     /**
      * Check if an employee exists by Slack ID

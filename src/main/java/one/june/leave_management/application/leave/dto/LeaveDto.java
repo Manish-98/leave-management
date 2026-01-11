@@ -14,6 +14,7 @@ import lombok.Setter;
 import lombok.ToString;
 import lombok.Builder;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -45,6 +46,16 @@ public class LeaveDto {
     @Schema(description = "Duration type of the leave", example = "FULL_DAY")
     private LeaveDurationType durationType = LeaveDurationType.FULL_DAY;
 
+    @Schema(description = "Adjusted duration in days based on query date range overlap. If null, returns actual duration.",
+            example = "5.0")
+    private Double adjustedDurationInDays;
+
+    @Schema(description = "Timestamp when the leave was created", example = "2024-01-15T10:30:00Z")
+    private Instant createdAt;
+
+    @Schema(description = "Timestamp when the leave was last updated", example = "2024-01-16T14:45:00Z")
+    private Instant updatedAt;
+
     @Schema(description = "List of source references from different systems")
     private List<LeaveSourceRefDto> sourceRefs;
 
@@ -58,6 +69,12 @@ public class LeaveDto {
     }
 
     public double getDurationInDays() {
+        // Return adjusted duration if available
+        if (adjustedDurationInDays != null) {
+            return adjustedDurationInDays;
+        }
+
+        // Otherwise calculate from actual date range
         if (dateRange == null) {
             return 0;
         }

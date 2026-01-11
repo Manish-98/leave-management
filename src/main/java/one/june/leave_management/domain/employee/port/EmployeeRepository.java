@@ -88,6 +88,15 @@ public interface EmployeeRepository {
     Page<Employee> searchByName(String name, Pageable pageable);
 
     /**
+     * Search employees by name or slack display name (case-insensitive partial match)
+     * Returns employees where the name contains the query OR slackDisplayName contains the query
+     *
+     * @param query the search query to match against name or slackDisplayName
+     * @return list of employees matching either field
+     */
+    List<Employee> searchByNameOrSlackDisplayName(String query);
+
+    /**
      * Check if an employee exists by Slack ID
      *
      * @param slackId the Slack ID

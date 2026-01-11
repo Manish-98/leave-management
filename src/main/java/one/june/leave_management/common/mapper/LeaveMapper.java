@@ -67,6 +67,8 @@ public class LeaveMapper {
                 .type(jpaEntity.getType())
                 .status(jpaEntity.getStatus())
                 .durationType(jpaEntity.getDurationType())
+                .createdAt(jpaEntity.getCreatedAt())
+                .updatedAt(jpaEntity.getUpdatedAt())
                 .build();
 
         // Map source references
@@ -131,6 +133,8 @@ public class LeaveMapper {
                 .type(leave.getType())
                 .status(leave.getStatus())
                 .durationType(leave.getDurationType())
+                .createdAt(leave.getCreatedAt())
+                .updatedAt(leave.getUpdatedAt())
                 .sourceRefs(sourceRefDtos)
                 .build();
     }

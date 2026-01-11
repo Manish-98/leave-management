@@ -138,34 +138,24 @@ public class LeavePersistenceAdapter implements LeaveRepository {
     public Page<Leave> findByFilters(LeaveFilters filters, Pageable pageable) {
         logger.debug("Finding leaves with filters: {}", filters);
 
-        // Calculate date ranges for year and quarter filters
-        java.time.LocalDate yearStart = null;
-        java.time.LocalDate yearEnd = null;
-        if (filters.getYear() != null) {
-            yearStart = java.time.LocalDate.of(filters.getYear(), 1, 1);
-            yearEnd = java.time.LocalDate.of(filters.getYear(), 12, 31);
+        Page<LeaveJpaEntity> jpaPage;
+        // Use the date-range-specific method when both dates are provided to avoid PostgreSQL parameter type issues
+        if (filters.getStartDate() != null && filters.getEndDate() != null) {
+            jpaPage = leaveJpaRepository.findByFiltersWithDateRange(
+                    filters.getUserIds(),
+                    filters.getStartDate(),
+                    filters.getEndDate(),
+                    pageable
+            );
+        } else {
+            // Use the general method when dates are not provided
+            jpaPage = leaveJpaRepository.findByFilters(
+                    filters.getUserIds(),
+                    filters.getStartDate(),
+                    filters.getEndDate(),
+                    pageable
+            );
         }
-
-        java.time.LocalDate quarterStart = null;
-        java.time.LocalDate quarterEnd = null;
-        if (filters.getStartMonth() != null && filters.getEndMonth() != null && filters.getYear() != null) {
-            quarterStart = java.time.LocalDate.of(filters.getYear(), filters.getStartMonth(), 1);
-            // Last day of the end month
-            int lastDayOfMonth = java.time.YearMonth.of(filters.getYear(), filters.getEndMonth()).lengthOfMonth();
-            quarterEnd = java.time.LocalDate.of(filters.getYear(), filters.getEndMonth(), lastDayOfMonth);
-        }
-
-        Page<LeaveJpaEntity> jpaPage = leaveJpaRepository.findByFilters(
-                filters.getUserId(),
-                filters.getYear(),
-                yearStart,
-                yearEnd,
-                filters.getStartMonth(),
-                filters.getEndMonth(),
-                quarterStart,
-                quarterEnd,
-                pageable
-        );
 
         return jpaPage.map(leaveMapper::toDomainEntity);
     }

@@ -116,6 +116,16 @@ public class EmployeePersistenceAdapter implements EmployeeRepository {
 
     @Override
     @Transactional(readOnly = true)
+    public List<Employee> searchByNameOrSlackDisplayName(String query) {
+        return employeeJpaRepository
+                .findByNameContainingIgnoreCaseOrSlackDisplayNameContainingIgnoreCase(query, query)
+                .stream()
+                .map(employeeMapper::toDomainEntity)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean existsBySlackId(String slackId) {
         return employeeJpaRepository.existsBySlackId(slackId);
     }

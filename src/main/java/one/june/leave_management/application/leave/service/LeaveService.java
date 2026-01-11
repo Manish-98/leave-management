@@ -18,6 +18,7 @@ import one.june.leave_management.domain.leave.model.SourceType;
 import one.june.leave_management.domain.leave.port.LeaveRepository;
 import one.june.leave_management.domain.leave.port.LeaveSourceRefRepository;
 import one.june.leave_management.domain.leave.service.LeaveDomainService;
+import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadRecordRepository;
 import one.june.leave_management.adapter.persistence.jpa.repository.BulkUploadJobRepository;
 import one.june.leave_management.application.bulk.strategy.LeaveBulkUploadStrategy;
@@ -61,6 +62,7 @@ public class LeaveService {
     private final CsvResultService csvResultService;
     private final LeaveBulkUploadStrategy leaveBulkUploadStrategy;
     private final EmployeeService employeeService;
+    private final EmployeeRepository employeeRepository;
 
     public LeaveService(LeaveRepository leaveRepository,
                         LeaveSourceRefRepository leaveSourceRefRepository,
@@ -71,7 +73,8 @@ public class LeaveService {
                         BulkUploadJobRepository bulkUploadJobRepository,
                         CsvResultService csvResultService,
                         LeaveBulkUploadStrategy leaveBulkUploadStrategy,
-                        EmployeeService employeeService) {
+                        EmployeeService employeeService,
+                        EmployeeRepository employeeRepository) {
         this.leaveRepository = leaveRepository;
         this.leaveSourceRefRepository = leaveSourceRefRepository;
         this.outboundSyncService = outboundSyncService;
@@ -82,6 +85,7 @@ public class LeaveService {
         this.csvResultService = csvResultService;
         this.leaveBulkUploadStrategy = leaveBulkUploadStrategy;
         this.employeeService = employeeService;
+        this.employeeRepository = employeeRepository;
     }
 
     /**
@@ -116,10 +120,10 @@ public class LeaveService {
      * Fetch leaves based on the provided filter criteria with pagination support.
      * All filters are optional - if no filters are provided, returns all leaves.
      *
-     * @param query the filter query containing optional userId, year, and quarter
+     * @param query the filter query containing optional userName and date range
      * @param pageable pagination parameters (page, size, sort)
      * @return paginated list of leaves matching the filter criteria
-     * @throws IllegalArgumentException if quarter is provided without year
+     * @throws IllegalArgumentException if startDate and endDate are not both provided
      */
     @Auditable
     @Transactional(readOnly = true)
@@ -141,8 +145,30 @@ public class LeaveService {
         // Batch fetch employees to avoid N+1 queries
         java.util.Map<UUID, EmployeeDto> employeeCache = batchFetchEmployees(leavesPage.getContent());
 
-        // Convert to DTOs using employee cache
-        Page<LeaveDto> dtoPage = leavesPage.map(leave -> leaveMapper.toDto(leave, employeeCache));
+        // Convert to DTOs using employee cache and calculate adjusted duration
+        Page<LeaveDto> dtoPage;
+        if (query.getStartDate() != null && query.getEndDate() != null) {
+            // Calculate adjusted duration based on date range overlap
+            dtoPage = leavesPage.map(leave -> {
+                LeaveDto dto = leaveMapper.toDto(leave, employeeCache);
+                dto.setAdjustedDurationInDays(calculateAdjustedDuration(leave, query.getStartDate(), query.getEndDate()));
+                return dto;
+            });
+        } else {
+            // No date range, use actual duration from the leave
+            dtoPage = leavesPage.map(leave -> {
+                LeaveDto dto = leaveMapper.toDto(leave, employeeCache);
+                // Calculate actual duration from leave
+                double actualDuration;
+                if (leave.getDurationType() == one.june.leave_management.domain.leave.model.LeaveDurationType.FULL_DAY) {
+                    actualDuration = leave.getDateRange() != null ? leave.getDateRange().toDays() : 0;
+                } else {
+                    actualDuration = 0.5;
+                }
+                dto.setAdjustedDurationInDays(actualDuration);
+                return dto;
+            });
+        }
 
         logger.info("Successfully fetched {} leaves (page {} of {})",
                     dtoPage.getNumberOfElements(),
@@ -210,7 +236,8 @@ public class LeaveService {
 
     /**
      * Convert LeaveFetchQuery to LeaveFilters domain model.
-     * Extracts quarter start/end months if quarter is provided.
+     * When userName is provided, searches for employees by name or slackDisplayName
+     * and uses their UUIDs for filtering.
      *
      * @param query the web layer query object
      * @return the domain layer filters object
@@ -218,23 +245,87 @@ public class LeaveService {
     private LeaveFilters convertToFilters(LeaveFetchQuery query) {
         LeaveFilters.LeaveFiltersBuilder builder = LeaveFilters.builder();
 
-        // User ID filter
-        if (query.getUserId() != null && !query.getUserId().isBlank()) {
-            builder.userId(query.getUserId());
+        // User ID filter - search employees by name or slackDisplayName
+        if (query.getUserName() != null && !query.getUserName().isBlank()) {
+            List<String> userIds = searchEmployeeIds(query.getUserName());
+            if (userIds != null && !userIds.isEmpty()) {
+                builder.userIds(userIds);
+            } else {
+                // If no employees found, set empty list to return no results
+                builder.userIds(Collections.emptyList());
+            }
         }
 
-        // Year filter
-        if (query.getYear() != null) {
-            builder.year(query.getYear());
-        }
-
-        // Quarter filter - extract start and end months
-        if (query.getQuarter() != null) {
-            builder.startMonth(query.getQuarter().getStartMonth());
-            builder.endMonth(query.getQuarter().getEndMonth());
+        // Date range filter
+        if (query.getStartDate() != null && query.getEndDate() != null) {
+            builder.startDate(query.getStartDate());
+            builder.endDate(query.getEndDate());
         }
 
         return builder.build();
+    }
+
+    /**
+     * Search for employees by name or slackDisplayName and return their UUIDs as strings.
+     *
+     * @param query the search query (name or slackDisplayName)
+     * @return list of employee UUIDs as strings
+     */
+    private List<String> searchEmployeeIds(String query) {
+        logger.debug("Searching for employees with query: {}", query);
+
+        List<one.june.leave_management.domain.employee.model.Employee> employees =
+                employeeRepository.searchByNameOrSlackDisplayName(query);
+
+        logger.debug("Found {} employees matching query: {}", employees.size(), query);
+
+        return employees.stream()
+                .map(employee -> employee.getId().toString())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Calculate the adjusted duration of a leave based on overlap with a query date range.
+     * For full-day leaves, calculates the exact number of overlapping days.
+     * For half-day leaves, returns 0.5 if the leave overlaps with the range.
+     *
+     * @param leave the leave entity
+     * @param queryStart the start date of the query range
+     * @param queryEnd the end date of the query range
+     * @return the adjusted duration in days
+     */
+    private double calculateAdjustedDuration(Leave leave, java.time.LocalDate queryStart, java.time.LocalDate queryEnd) {
+        // For half-day leaves, return 0.5 if it overlaps with the range
+        if (leave.getDurationType() != one.june.leave_management.domain.leave.model.LeaveDurationType.FULL_DAY) {
+            // Check if the leave date overlaps with the query range
+            if (leave.getStartDate() != null && leave.getEndDate() != null) {
+                boolean overlaps = leave.getStartDate().compareTo(queryEnd) <= 0
+                        && leave.getEndDate().compareTo(queryStart) >= 0;
+                return overlaps ? 0.5 : 0.0;
+            }
+            return 0.0;
+        }
+
+        // For full-day leaves, calculate overlapping days
+        java.time.LocalDate leaveStart = leave.getStartDate();
+        java.time.LocalDate leaveEnd = leave.getEndDate();
+
+        if (leaveStart == null || leaveEnd == null) {
+            return 0.0;
+        }
+
+        // Calculate overlap
+        java.time.LocalDate overlapStart = leaveStart.isAfter(queryStart) ? leaveStart : queryStart;
+        java.time.LocalDate overlapEnd = leaveEnd.isBefore(queryEnd) ? leaveEnd : queryEnd;
+
+        // Check if there is an overlap
+        if (overlapStart.isAfter(overlapEnd)) {
+            return 0.0; // No overlap
+        }
+
+        // Calculate days in the overlap (inclusive)
+        long days = java.time.temporal.ChronoUnit.DAYS.between(overlapStart, overlapEnd) + 1;
+        return (double) days;
     }
 
     private Leave createNewLeave(LeaveIngestionCommand command) {

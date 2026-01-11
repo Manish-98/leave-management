@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -18,26 +20,24 @@ import java.util.Objects;
 public class LeaveFilters {
 
     /**
-     * Optional user ID to filter leaves by user.
+     * Optional list of user IDs to filter leaves by users.
+     * When provided, only leaves for these user IDs will be returned.
      */
-    private String userId;
+    private List<String> userIds;
 
     /**
-     * Optional year to filter leaves by.
+     * Optional start date to filter leaves by.
+     * If provided, endDate must also be provided.
+     * Leaves will be filtered if any part of their date range falls within the specified date range.
      */
-    private Integer year;
+    private LocalDate startDate;
 
     /**
-     * Optional start month for quarter filtering (1-12).
-     * If provided, endMonth must also be provided.
+     * Optional end date to filter leaves by.
+     * If provided, startDate must also be provided.
+     * Leaves will be filtered if any part of their date range falls within the specified date range.
      */
-    private Integer startMonth;
-
-    /**
-     * Optional end month for quarter filtering (1-12).
-     * If provided, startMonth must also be provided.
-     */
-    private Integer endMonth;
+    private LocalDate endDate;
 
     /**
      * Checks if any filter is set.
@@ -45,7 +45,7 @@ public class LeaveFilters {
      * @return true if at least one filter parameter is provided, false otherwise
      */
     public boolean hasFilters() {
-        return userId != null || year != null || (startMonth != null && endMonth != null);
+        return (userIds != null && !userIds.isEmpty()) || startDate != null || endDate != null;
     }
 
     @Override
@@ -53,14 +53,13 @@ public class LeaveFilters {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         LeaveFilters that = (LeaveFilters) o;
-        return Objects.equals(userId, that.userId) &&
-                Objects.equals(year, that.year) &&
-                Objects.equals(startMonth, that.startMonth) &&
-                Objects.equals(endMonth, that.endMonth);
+        return Objects.equals(userIds, that.userIds) &&
+                Objects.equals(startDate, that.startDate) &&
+                Objects.equals(endDate, that.endDate);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(userId, year, startMonth, endMonth);
+        return Objects.hash(userIds, startDate, endDate);
     }
 }

@@ -285,14 +285,14 @@ class LeaveControllerTest {
         }
 
         @Test
-        @DisplayName("Should fetch leaves with userId filter")
-        void shouldFetchLeavesWithUserIdFilter() {
+        @DisplayName("Should fetch leaves with userName filter")
+        void shouldFetchLeavesWithUserNameFilter() {
             // Given
-            String userId = "user-123";
+            String userName = "user-123";
             Pageable pageable = PageRequest.of(0, 20);
-            LeaveFetchQuery query = LeaveFetchQuery.builder().userId(userId).build();
+            LeaveFetchQuery query = LeaveFetchQuery.builder().userName(userName).build();
 
-            EmployeeDto employee = createTestEmployee(userId, "User 123");
+            EmployeeDto employee = createTestEmployee(userName, "User 123");
 
             LeaveDto leave = LeaveDto.builder()
                     .id(UUID.randomUUID())
@@ -304,33 +304,33 @@ class LeaveControllerTest {
             when(leaveService.fetchLeaves(query, pageable)).thenReturn(expectedPage);
 
             // When
-            ResponseEntity<Page<LeaveDto>> response = controller.fetchLeaves(userId, null, null, pageable);
+            ResponseEntity<Page<LeaveDto>> response = controller.fetchLeaves(userName, null, null, pageable);
 
             // Then
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody().getContent()).hasSize(1);
-            assertThat(response.getBody().getContent().get(0).getEmployee().getSlackId()).isEqualTo(userId);
+            assertThat(response.getBody().getContent().get(0).getEmployee().getSlackId()).isEqualTo(userName);
 
             verify(leaveService).fetchLeaves(query, pageable);
         }
 
         @Test
-        @DisplayName("Should fetch leaves with year and quarter filters")
-        void shouldFetchLeavesWithYearAndQuarterFilters() {
+        @DisplayName("Should fetch leaves with date range filters")
+        void shouldFetchLeavesWithDateRangeFilters() {
             // Given
-            Integer year = 2024;
-            Quarter quarter = Quarter.Q1;
+            LocalDate startDate = LocalDate.of(2024, 1, 1);
+            LocalDate endDate = LocalDate.of(2024, 3, 31);
             Pageable pageable = PageRequest.of(0, 20);
             LeaveFetchQuery query = LeaveFetchQuery.builder()
-                    .year(year)
-                    .quarter(quarter)
+                    .startDate(startDate)
+                    .endDate(endDate)
                     .build();
 
             Page<LeaveDto> expectedPage = new PageImpl<>(List.of(), pageable, 0);
             when(leaveService.fetchLeaves(query, pageable)).thenReturn(expectedPage);
 
             // When
-            ResponseEntity<Page<LeaveDto>> response = controller.fetchLeaves(null, year, quarter, pageable);
+            ResponseEntity<Page<LeaveDto>> response = controller.fetchLeaves(null, startDate, endDate, pageable);
 
             // Then
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -338,17 +338,49 @@ class LeaveControllerTest {
         }
 
         @Test
-        @DisplayName("Should throw IllegalArgumentException when quarter provided without year")
-        void shouldThrowExceptionWhenQuarterWithoutYear() {
+        @DisplayName("Should throw IllegalArgumentException when only start date provided")
+        void shouldThrowExceptionWhenOnlyStartDate() {
             // Given
             Pageable pageable = PageRequest.of(0, 20);
+            LocalDate startDate = LocalDate.of(2024, 1, 1);
 
             // When & Then
             assertThatThrownBy(() ->
-                    controller.fetchLeaves(null, null, Quarter.Q1, pageable)
+                    controller.fetchLeaves(null, startDate, null, pageable)
             )
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("Quarter filter requires year parameter to be specified");
+                    .hasMessageContaining("Both startDate and endDate must be provided together");
+        }
+
+        @Test
+        @DisplayName("Should throw IllegalArgumentException when only end date provided")
+        void shouldThrowExceptionWhenOnlyEndDate() {
+            // Given
+            Pageable pageable = PageRequest.of(0, 20);
+            LocalDate endDate = LocalDate.of(2024, 12, 31);
+
+            // When & Then
+            assertThatThrownBy(() ->
+                    controller.fetchLeaves(null, null, endDate, pageable)
+            )
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Both startDate and endDate must be provided together");
+        }
+
+        @Test
+        @DisplayName("Should throw IllegalArgumentException when startDate is after endDate")
+        void shouldThrowExceptionWhenStartDateAfterEndDate() {
+            // Given
+            Pageable pageable = PageRequest.of(0, 20);
+            LocalDate startDate = LocalDate.of(2024, 12, 31);
+            LocalDate endDate = LocalDate.of(2024, 1, 1);
+
+            // When & Then
+            assertThatThrownBy(() ->
+                    controller.fetchLeaves(null, startDate, endDate, pageable)
+            )
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("startDate cannot be after endDate");
 
             verifyNoInteractions(leaveService);
         }

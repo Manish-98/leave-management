@@ -522,12 +522,12 @@ class LeavePersistenceAdapterTest {
     class FindByFiltersTests {
 
         @Test
-        @DisplayName("Should find leaves with user ID filter")
-        void shouldFindLeavesWithUserIdFilter() {
+        @DisplayName("Should find leaves with user IDs filter")
+        void shouldFindLeavesWithUserIdsFilter() {
             // Given
             String userId = "user-123";
             LeaveFilters filters = LeaveFilters.builder()
-                    .userId(userId)
+                    .userIds(List.of(userId))
                     .build();
             Pageable pageable = PageRequest.of(0, 20);
 
@@ -539,8 +539,7 @@ class LeavePersistenceAdapterTest {
             Page<LeaveJpaEntity> jpaPage = new PageImpl<>(List.of(entity), pageable, 1);
 
             when(leaveJpaRepository.findByFilters(
-                    eq(userId), eq(null), eq(null), eq(null),
-                    eq(null), eq(null), eq(null), eq(null), eq(pageable)))
+                    eq(List.of(userId)), eq(null), eq(null), eq(pageable)))
                     .thenReturn(jpaPage);
 
             Leave leave = Leave.builder()
@@ -558,26 +557,24 @@ class LeavePersistenceAdapterTest {
             assertThat(result.getContent().get(0).getUserId()).isEqualTo(userId);
 
             verify(leaveJpaRepository).findByFilters(
-                    eq(userId), eq(null), eq(null), eq(null),
-                    eq(null), eq(null), eq(null), eq(null), eq(pageable));
+                    eq(List.of(userId)), eq(null), eq(null), eq(pageable));
         }
 
         @Test
-        @DisplayName("Should find leaves with year filter")
-        void shouldFindLeavesWithYearFilter() {
+        @DisplayName("Should find leaves with date range filter")
+        void shouldFindLeavesWithDateRangeFilter() {
             // Given
-            Integer year = 2024;
+            LocalDate startDate = LocalDate.of(2024, 1, 1);
+            LocalDate endDate = LocalDate.of(2024, 12, 31);
             LeaveFilters filters = LeaveFilters.builder()
-                    .year(year)
+                    .startDate(startDate)
+                    .endDate(endDate)
                     .build();
             Pageable pageable = PageRequest.of(0, 20);
 
-            LocalDate yearStart = LocalDate.of(2024, 1, 1);
-            LocalDate yearEnd = LocalDate.of(2024, 12, 31);
-
-            when(leaveJpaRepository.findByFilters(
-                    eq(null), eq(year), eq(yearStart), eq(yearEnd),
-                    eq(null), eq(null), eq(null), eq(null), eq(pageable)))
+            // When both dates are provided, the adapter uses findByFiltersWithDateRange
+            when(leaveJpaRepository.findByFiltersWithDateRange(
+                    eq(null), eq(startDate), eq(endDate), eq(pageable)))
                     .thenReturn(Page.empty());
 
             // When
@@ -585,35 +582,29 @@ class LeavePersistenceAdapterTest {
 
             // Then
             assertThat(result.getContent()).isEmpty();
-            verify(leaveJpaRepository).findByFilters(
-                    eq(null), eq(year), eq(yearStart), eq(yearEnd),
-                    eq(null), eq(null), eq(null), eq(null), eq(pageable));
+            verify(leaveJpaRepository).findByFiltersWithDateRange(
+                    eq(null), eq(startDate), eq(endDate), eq(pageable));
         }
 
         @Test
-        @DisplayName("Should find leaves with year and quarter filter")
-        void shouldFindLeavesWithYearAndQuarterFilter() {
+        @DisplayName("Should find leaves with user IDs and date range filters")
+        void shouldFindLeavesWithUserAndDateRangeFilters() {
             // Given
-            Integer year = 2024;
-            Integer startMonth = 1;
-            Integer endMonth = 3;
+            String userId = "user123";
+            LocalDate startDate = LocalDate.of(2024, 1, 1);
+            LocalDate endDate = LocalDate.of(2024, 3, 31);
             LeaveFilters filters = LeaveFilters.builder()
-                    .year(year)
-                    .startMonth(startMonth)
-                    .endMonth(endMonth)
+                    .userIds(List.of(userId))
+                    .startDate(startDate)
+                    .endDate(endDate)
                     .build();
             Pageable pageable = PageRequest.of(0, 20);
 
-            LocalDate yearStart = LocalDate.of(2024, 1, 1);
-            LocalDate yearEnd = LocalDate.of(2024, 12, 31);
-            LocalDate quarterStart = LocalDate.of(2024, 1, 1);
-            LocalDate quarterEnd = LocalDate.of(2024, 3, 31);
-
             Page<LeaveJpaEntity> emptyPage = Page.empty(pageable);
 
-            when(leaveJpaRepository.findByFilters(
-                    eq(null), eq(year), eq(yearStart), eq(yearEnd),
-                    eq(startMonth), eq(endMonth), eq(quarterStart), eq(quarterEnd), eq(pageable)))
+            // When both dates are provided, the adapter uses findByFiltersWithDateRange
+            when(leaveJpaRepository.findByFiltersWithDateRange(
+                    eq(List.of(userId)), eq(startDate), eq(endDate), eq(pageable)))
                     .thenReturn(emptyPage);
 
             // When
@@ -621,9 +612,8 @@ class LeavePersistenceAdapterTest {
 
             // Then
             assertThat(result.getContent()).isEmpty();
-            verify(leaveJpaRepository).findByFilters(
-                    eq(null), eq(year), eq(yearStart), eq(yearEnd),
-                    eq(startMonth), eq(endMonth), eq(quarterStart), eq(quarterEnd), eq(pageable));
+            verify(leaveJpaRepository).findByFiltersWithDateRange(
+                    eq(List.of(userId)), eq(startDate), eq(endDate), eq(pageable));
         }
 
         @Test
@@ -641,8 +631,7 @@ class LeavePersistenceAdapterTest {
             Page<LeaveJpaEntity> jpaPage = new PageImpl<>(List.of(entity), pageable, 1);
 
             when(leaveJpaRepository.findByFilters(
-                    eq(null), eq(null), eq(null), eq(null),
-                    eq(null), eq(null), eq(null), eq(null), eq(pageable)))
+                    eq(null), eq(null), eq(null), eq(pageable)))
                     .thenReturn(jpaPage);
 
             Leave leave = Leave.builder()

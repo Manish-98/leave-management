@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.AllArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,8 @@ public class Leave {
     @ToString.Exclude
     @Builder.Default
     private List<LeaveSourceRef> sourceRefs = new ArrayList<>();
+    private Instant createdAt;
+    private Instant updatedAt;
 
     // Static factory method for business logic with validation
     public static Leave create(String userId, LocalDate startDate, LocalDate endDate, LeaveType type, LeaveStatus status) {

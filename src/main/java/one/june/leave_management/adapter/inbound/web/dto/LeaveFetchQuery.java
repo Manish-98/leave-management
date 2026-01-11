@@ -4,8 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import one.june.leave_management.common.model.Quarter;
 
+import java.time.LocalDate;
 import java.util.Objects;
 
 /**
@@ -19,22 +19,24 @@ import java.util.Objects;
 public class LeaveFetchQuery {
 
     /**
-     * Optional user ID to filter leaves by user.
+     * Optional user name to filter leaves by user.
+     * Searches for employees by name or slack display name (partial match, case-insensitive).
      */
-    private String userId;
+    private String userName;
 
     /**
-     * Optional year to filter leaves by.
-     * Leaves will be filtered if any part of their date range falls in the specified year.
+     * Optional start date to filter leaves by.
+     * If provided, endDate must also be provided.
+     * Leaves will be filtered if any part of their date range falls within the specified date range.
      */
-    private Integer year;
+    private LocalDate startDate;
 
     /**
-     * Optional quarter to filter leaves by.
-     * Leaves will be filtered if any part of their date range falls in the specified quarter.
-     * Must be used in combination with year parameter.
+     * Optional end date to filter leaves by.
+     * If provided, startDate must also be provided.
+     * Leaves will be filtered if any part of their date range falls within the specified date range.
      */
-    private Quarter quarter;
+    private LocalDate endDate;
 
     /**
      * Checks if any filter is set.
@@ -42,17 +44,20 @@ public class LeaveFetchQuery {
      * @return true if at least one filter parameter is provided, false otherwise
      */
     public boolean hasFilters() {
-        return userId != null || year != null || quarter != null;
+        return userName != null || startDate != null || endDate != null;
     }
 
     /**
-     * Validates that quarter is only used with year.
+     * Validates that startDate and endDate are provided together and that startDate is not after endDate.
      *
-     * @throws IllegalArgumentException if quarter is provided without year
+     * @throws IllegalArgumentException if validation fails
      */
     public void validate() {
-        if (quarter != null && year == null) {
-            throw new IllegalArgumentException("Quarter filter requires year parameter to be specified");
+        if ((startDate != null && endDate == null) || (startDate == null && endDate != null)) {
+            throw new IllegalArgumentException("Both startDate and endDate must be provided together");
+        }
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("startDate cannot be after endDate");
         }
     }
 
@@ -61,13 +66,13 @@ public class LeaveFetchQuery {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         LeaveFetchQuery that = (LeaveFetchQuery) o;
-        return Objects.equals(userId, that.userId) &&
-                Objects.equals(year, that.year) &&
-                quarter == that.quarter;
+        return Objects.equals(userName, that.userName) &&
+                Objects.equals(startDate, that.startDate) &&
+                Objects.equals(endDate, that.endDate);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(userId, year, quarter);
+        return Objects.hash(userName, startDate, endDate);
     }
 }

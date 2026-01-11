@@ -13,6 +13,7 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +60,12 @@ public class LeaveJpaEntity {
     @ToString.Exclude
     @Builder.Default
     private List<LeaveSourceRefJpaEntity> sourceRefs = new ArrayList<>();
+
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", insertable = false, updatable = false)
+    private Instant updatedAt;
 
     // Helper methods
     public void addSourceRef(LeaveSourceRefJpaEntity sourceRef) {

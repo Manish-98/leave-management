@@ -18,7 +18,6 @@ import one.june.leave_management.adapter.inbound.web.dto.BulkUploadResponse;
 import one.june.leave_management.common.annotation.Auditable;
 import one.june.leave_management.common.exception.BulkUploadJobNotFoundException;
 import one.june.leave_management.common.mapper.LeaveMapper;
-import one.june.leave_management.common.model.Quarter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.FileSystemResource;
@@ -100,8 +99,24 @@ public class LeaveController {
     @Auditable("Fetch leaves endpoint")
     @Operation(
             summary = "Fetch leave requests with optional filters",
-            description = "Retrieves a paginated list of leave requests. Supports filtering by user ID, year, and quarter. " +
-                    "Results are sorted and paginated. Quarter filter requires year to be specified.",
+            description = "Retrieves a paginated list of leave requests. Supports filtering by user name and date range. " +
+                    "Results are sorted by startDate DESC (most recent first) and paginated.\n\n" +
+                    "**Date Range Filtering:**\n" +
+                    "- If startDate and endDate are provided, both must be specified together\n" +
+                    "- Returns leaves that overlap with the specified date range (not just leaves completely within the range)\n" +
+                    "- Example: A leave from Jan 1-10 will be included when querying for Jan 5-15\n\n" +
+                    "**Duration Calculation:**\n" +
+                    "- When a date range is provided, `durationInDays` shows the duration within that range only\n" +
+                    "- The actual leave start/end dates are never modified\n" +
+                    "- Example: A 10-day leave (Mar 1-10) queried for range Mar 1-7 shows durationInDays=7.0\n" +
+                    "- Half-day leaves return 0.5 if they overlap with the range\n\n" +
+                    "**User Name Filtering:**\n" +
+                    "- Searches employees by name or slack display name (partial match, case-insensitive)\n" +
+                    "- Returns leaves for all matching employees\n" +
+                    "- Example: `?userName=John` matches both \"John Doe\" and \"Johnny Smith\"\n\n" +
+                    "**Examples:**\n" +
+                    "- `?startDate=2024-01-01&endDate=2024-03-31` - All leaves in Q1 2024\n" +
+                    "- `?userName=John&startDate=2024-01-01&endDate=2024-12-31` - John's leaves in 2024",
             tags = {"Leave Management"}
     )
     @ApiResponses({
@@ -112,7 +127,7 @@ public class LeaveController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "Invalid request parameters - e.g., quarter specified without year",
+                    description = "Invalid request parameters - e.g., only one of startDate/endDate provided, or startDate > endDate",
                     content = @Content(schema = @Schema(implementation = one.june.leave_management.common.exception.ErrorResponse.class))
             ),
             @ApiResponse(
@@ -122,27 +137,41 @@ public class LeaveController {
             )
     })
     public ResponseEntity<Page<LeaveDto>> fetchLeaves(
-            @Parameter(description = "Filter by user ID (optional)", example = "user123")
-            @RequestParam(required = false) String userId,
-            @Parameter(description = "Filter by year (optional, required when using quarter)", example = "2024")
-            @RequestParam(required = false) Integer year,
-            @Parameter(description = "Filter by quarter (optional, requires year to be specified)", example = "Q1")
-            @RequestParam(required = false) Quarter quarter,
-            @Parameter(description = "Pagination and sorting parameters", hidden = true)
+            @Parameter(
+                    description = "Filter by user name or slack display name (optional, partial match, case-insensitive)",
+                    example = "John"
+            )
+            @RequestParam(required = false) String userName,
+            @Parameter(
+                    description = "Filter by start date (optional, format: yyyy-MM-dd). " +
+                            "If provided, endDate must also be specified. " +
+                            "Leaves overlapping with this date will be included.",
+                    example = "2024-01-01"
+            )
+            @RequestParam(required = false) java.time.LocalDate startDate,
+            @Parameter(
+                    description = "Filter by end date (optional, format: yyyy-MM-dd). " +
+                            "If provided, startDate must also be specified. " +
+                            "Leaves overlapping with this date will be included.",
+                    example = "2024-12-31"
+            )
+            @RequestParam(required = false) java.time.LocalDate endDate,
+            @Parameter(
+                    description = "Pagination and sorting parameters (e.g., ?page=0&size=20&sort=startDate,desc)",
+                    hidden = true
+            )
             @PageableDefault(size = 20) Pageable pageable) {
-        logger.info("Fetching leaves with filters - userId: {}, year: {}, quarter: {}, pageable: {}",
-                    userId, year, quarter, pageable);
-
-        // Validate that quarter is only used with year
-        if (quarter != null && year == null) {
-            throw new IllegalArgumentException("Quarter filter requires year parameter to be specified");
-        }
+        logger.info("Fetching leaves with filters - userName: {}, startDate: {}, endDate: {}, pageable: {}",
+                    userName, startDate, endDate, pageable);
 
         LeaveFetchQuery query = LeaveFetchQuery.builder()
-                .userId(userId)
-                .year(year)
-                .quarter(quarter)
+                .userName(userName)
+                .startDate(startDate)
+                .endDate(endDate)
                 .build();
+
+        // Validate query parameters
+        query.validate();
 
         Page<LeaveDto> result = leaveService.fetchLeaves(query, pageable);
 

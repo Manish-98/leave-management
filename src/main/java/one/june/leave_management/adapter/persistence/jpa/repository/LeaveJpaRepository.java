@@ -43,33 +43,46 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
     /**
      * Find leaves by filters with pagination support.
      * All filters are optional - null values will be ignored.
-     * Uses date range comparisons for year filtering to ensure compatibility with H2 database.
+     * Uses date range overlap logic to find leaves that intersect with the specified date range.
      * Default sorting is applied at the service layer (startDate DESC).
      * Clients can override the default sort order using Pageable sort parameters.
      *
-     * @param userId optional user ID to filter by
-     * @param year optional year to filter by (leaves overlapping with the year)
-     * @param startMonth optional start month for quarter filtering (1-12)
-     * @param endMonth optional end month for quarter filtering (1-12)
+     * @param userIds optional list of user IDs to filter by
+     * @param startDate optional start date (must be provided with endDate)
+     * @param endDate optional end date (must be provided with startDate)
      * @param pageable pagination and sorting parameters
      * @return page of leaves matching the filter criteria
      */
     @Query("SELECT l FROM LeaveJpaEntity l " +
            "LEFT JOIN FETCH l.sourceRefs WHERE " +
-           "(:userId IS NULL OR l.userId = :userId) AND " +
-           "(:year IS NULL OR " +
-           "  (l.startDate <= :yearEnd AND l.endDate >= :yearStart)) AND " +
-           "(:startMonth IS NULL OR :endMonth IS NULL OR " +
-           "  (l.startDate <= :quarterEnd AND l.endDate >= :quarterStart))")
+           "(:userIds IS NULL OR l.userId IN :userIds) AND " +
+           "(:startDate IS NULL OR l.endDate >= :startDate) AND " +
+           "(:endDate IS NULL OR l.startDate <= :endDate)")
     Page<LeaveJpaEntity> findByFilters(
-            @Param("userId") String userId,
-            @Param("year") Integer year,
-            @Param("yearStart") java.time.LocalDate yearStart,
-            @Param("yearEnd") java.time.LocalDate yearEnd,
-            @Param("startMonth") Integer startMonth,
-            @Param("endMonth") Integer endMonth,
-            @Param("quarterStart") java.time.LocalDate quarterStart,
-            @Param("quarterEnd") java.time.LocalDate quarterEnd,
+            @Param("userIds") List<String> userIds,
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate,
+            Pageable pageable);
+
+    /**
+     * Find leaves by filters with pagination support - date range variant.
+     * This method is used when startDate and endDate are both non-null.
+     * Using function expressions to provide type hints for PostgreSQL JDBC driver.
+     *
+     * @param userIds optional list of user IDs to filter by
+     * @param startDate start date (non-null)
+     * @param endDate end date (non-null)
+     * @param pageable pagination and sorting parameters
+     * @return page of leaves matching the filter criteria
+     */
+    @Query("SELECT l FROM LeaveJpaEntity l " +
+           "LEFT JOIN FETCH l.sourceRefs WHERE " +
+           "(:userIds IS NULL OR l.userId IN :userIds) AND " +
+           "l.endDate >= :startDate AND l.startDate <= :endDate")
+    Page<LeaveJpaEntity> findByFiltersWithDateRange(
+            @Param("userIds") List<String> userIds,
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate,
             Pageable pageable);
 
     /**
