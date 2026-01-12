@@ -97,4 +97,13 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
             @Param("userId") String userId,
             @Param("yearStart") java.time.LocalDate yearStart,
             @Param("yearEnd") java.time.LocalDate yearEnd);
+
+    /**
+     * Find all active (non-deactivated) leaves for a specific user.
+     * Ordered by start date descending (most recent first).
+     */
+    @Query("SELECT l FROM LeaveJpaEntity l WHERE l.userId = :userId " +
+           "AND l.status != 'DEACTIVATED' " +
+           "ORDER BY l.startDate DESC")
+    List<LeaveJpaEntity> findActiveLeavesByUserId(@Param("userId") String userId);
 }

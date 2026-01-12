@@ -426,4 +426,65 @@ public class LeaveService {
             throw new IllegalStateException("Source reference points to non-existent leave: " + sourceRef.getLeaveId());
         }
     }
+
+    /**
+     * Soft delete a leave by updating its status to DEACTIVATED.
+     * Validates that the leave exists and belongs to the requesting user.
+     *
+     * @param leaveId the UUID of the leave to deactivate
+     * @param requestingUserId the user ID of the employee requesting deletion
+     * @return the updated leave DTO
+     * @throws IllegalArgumentException if leave not found or doesn't belong to user
+     */
+    @Transactional
+    public LeaveDto softDeleteLeave(UUID leaveId, String requestingUserId) {
+        logger.info("Soft deleting leave {} for user {}", leaveId, requestingUserId);
+
+        // Validate inputs
+        if (leaveId == null) {
+            throw new IllegalArgumentException("Leave ID cannot be null");
+        }
+        if (requestingUserId == null || requestingUserId.isBlank()) {
+            throw new IllegalArgumentException("Requesting user ID cannot be null or empty");
+        }
+
+        // Find the leave
+        Leave leave = leaveRepository.findById(leaveId)
+                .orElseThrow(() -> new IllegalArgumentException("Leave not found with ID: " + leaveId));
+
+        // Validate ownership
+        if (!requestingUserId.equals(leave.getUserId())) {
+            logger.warn("User {} attempted to delete leave {} belonging to user {}",
+                    requestingUserId, leaveId, leave.getUserId());
+            throw new IllegalArgumentException("Leave does not belong to the requesting user");
+        }
+
+        // Check if already deactivated
+        if (leave.getStatus() == one.june.leave_management.domain.leave.model.LeaveStatus.DEACTIVATED) {
+            logger.info("Leave {} is already deactivated", leaveId);
+            return leaveMapper.toDto(leave);
+        }
+
+        // Update status to DEACTIVATED
+        leave.setStatus(one.june.leave_management.domain.leave.model.LeaveStatus.DEACTIVATED);
+        Leave updatedLeave = leaveRepository.save(leave);
+
+        logger.info("Successfully soft deleted leave {} for user {}", leaveId, requestingUserId);
+        return leaveMapper.toDto(updatedLeave);
+    }
+
+    /**
+     * Find all active (non-deactivated) leaves for a specific user.
+     *
+     * @param userId the user ID
+     * @return list of active leave DTOs
+     */
+    @Transactional(readOnly = true)
+    public List<LeaveDto> findActiveLeavesByUserId(String userId) {
+        logger.debug("Finding active leaves for user {}", userId);
+        List<Leave> activeLeaves = leaveRepository.findActiveLeavesByUserId(userId);
+        return activeLeaves.stream()
+                .map(leaveMapper::toDto)
+                .collect(Collectors.toList());
+    }
 }

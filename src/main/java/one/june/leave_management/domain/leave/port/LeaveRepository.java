@@ -49,4 +49,11 @@ public interface LeaveRepository {
      * @return count of approved optional holiday leaves
      */
     long countApprovedOptionalHolidaysByUserAndYear(String userId, int year);
+
+    /**
+     * Find all active (non-deactivated) leaves for a specific user.
+     * @param userId the user ID
+     * @return list of active leaves
+     */
+    List<Leave> findActiveLeavesByUserId(String userId);
 }

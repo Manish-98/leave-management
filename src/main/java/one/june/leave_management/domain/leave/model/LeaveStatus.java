@@ -9,5 +9,7 @@ public enum LeaveStatus {
     @Schema(description = "Leave request has been approved")
     APPROVED,
     @Schema(description = "Leave request has been cancelled")
-    CANCELLED
+    CANCELLED,
+    @Schema(description = "Leave request has been soft deleted/deactivated")
+    DEACTIVATED
 }
