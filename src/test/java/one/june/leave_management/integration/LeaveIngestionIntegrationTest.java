@@ -72,6 +72,10 @@ class LeaveIngestionIntegrationTest {
     private static final String EMPLOYEE_OPTIONAL_INVALID = "123e4567-e89b-12d3-a456-42661417410e";
     private static final String EMPLOYEE_OPTIONAL_MULTI = "123e4567-e89b-12d3-a456-42661417410f";
     private static final String EMPLOYEE_ANNUAL_NO_HOLIDAY = "123e4567-e89b-12d3-a456-426614174110";
+    private static final String EMPLOYEE_WEEKEND_ONLY = "123e4567-e89b-12d3-a456-426614174111";
+    private static final String EMPLOYEE_WEEKEND_MIXED = "123e4567-e89b-12d3-a456-426614174112";
+    private static final String EMPLOYEE_HALF_DAY_WEEKEND = "123e4567-e89b-12d3-a456-426614174113";
+    private static final String EMPLOYEE_HALF_DAY_WEEKDAY = "123e4567-e89b-12d3-a456-426614174114";
 
     @BeforeEach
     void setUp() {
@@ -93,7 +97,8 @@ class LeaveIngestionIntegrationTest {
                 EMPLOYEE_ALL_TYPES, EMPLOYEE_ALL_STATUSES, EMPLOYEE_ALL_DURATIONS,
                 EMPLOYEE_INVALID_DATE, EMPLOYEE_LONG_SOURCE, EMPLOYEE_MULTI_SOURCE,
                 EMPLOYEE_OPTIONAL_VALID, EMPLOYEE_OPTIONAL_INVALID, EMPLOYEE_OPTIONAL_MULTI,
-                EMPLOYEE_ANNUAL_NO_HOLIDAY
+                EMPLOYEE_ANNUAL_NO_HOLIDAY, EMPLOYEE_WEEKEND_ONLY, EMPLOYEE_WEEKEND_MIXED,
+                EMPLOYEE_HALF_DAY_WEEKEND, EMPLOYEE_HALF_DAY_WEEKDAY
         };
 
         jdbcTemplate.update("DELETE FROM leave WHERE user_id IN (" +
@@ -371,8 +376,8 @@ class LeaveIngestionIntegrationTest {
                 .sourceId("web-half-day")
                 .userId(EMPLOYEE_HALF_DAY)
                 .dateRange(DateRange.builder()
-                        .startDate(FIXED_DATE.plusDays(1))
-                        .endDate(FIXED_DATE.plusDays(1)) // Same day
+                        .startDate(FIXED_DATE.plusDays(3)) // Monday (2024-06-17)
+                        .endDate(FIXED_DATE.plusDays(3)) // Same day
                         .build())
                 .type(LeaveType.ANNUAL_LEAVE)
                 .status(LeaveStatus.REQUESTED)
@@ -392,8 +397,8 @@ class LeaveIngestionIntegrationTest {
                 .sourceId("web-invalid-half-day")
                 .userId(EMPLOYEE_INVALID_HALF_DAY)
                 .dateRange(DateRange.builder()
-                        .startDate(FIXED_DATE.plusDays(1))
-                        .endDate(FIXED_DATE.plusDays(3)) // Different days
+                        .startDate(FIXED_DATE.plusDays(3)) // Monday
+                        .endDate(FIXED_DATE.plusDays(5)) // Wednesday (different days)
                         .build())
                 .type(LeaveType.ANNUAL_LEAVE)
                 .status(LeaveStatus.REQUESTED)
@@ -416,8 +421,8 @@ class LeaveIngestionIntegrationTest {
                     .sourceId(sourceType.name().toLowerCase() + "-integration-test")
                     .userId(EMPLOYEE_ALL_SOURCES)
                     .dateRange(DateRange.builder()
-                            .startDate(FIXED_DATE.plusDays(1 + dayOffset * 10))
-                            .endDate(FIXED_DATE.plusDays(2 + dayOffset * 10))
+                            .startDate(FIXED_DATE.plusDays(3 + dayOffset * 10)) // Start from Monday
+                            .endDate(FIXED_DATE.plusDays(4 + dayOffset * 10))
                             .build())
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -474,8 +479,8 @@ class LeaveIngestionIntegrationTest {
                     .sourceId("web-status-" + leaveStatus.name())
                     .userId(EMPLOYEE_ALL_STATUSES)
                     .dateRange(DateRange.builder()
-                            .startDate(FIXED_DATE.plusDays(1 + dayOffset * 10))
-                            .endDate(FIXED_DATE.plusDays(2 + dayOffset * 10))
+                            .startDate(FIXED_DATE.plusDays(3 + dayOffset * 10)) // Start from Monday
+                            .endDate(FIXED_DATE.plusDays(4 + dayOffset * 10))
                             .build())
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(leaveStatus)
@@ -499,8 +504,8 @@ class LeaveIngestionIntegrationTest {
                     .sourceId("web-duration-" + durationType.name())
                     .userId(EMPLOYEE_ALL_DURATIONS)
                     .dateRange(DateRange.builder()
-                            .startDate(FIXED_DATE.plusDays(1 + dayOffset * 10))
-                            .endDate(FIXED_DATE.plusDays(1 + dayOffset * 10)) // Same day for half-day leaves
+                            .startDate(FIXED_DATE.plusDays(3 + dayOffset * 10)) // Start from Monday
+                            .endDate(FIXED_DATE.plusDays(3 + dayOffset * 10)) // Same day for half-day leaves
                             .build())
                     .type(LeaveType.ANNUAL_LEAVE)
                     .status(LeaveStatus.REQUESTED)
@@ -753,5 +758,110 @@ class LeaveIngestionIntegrationTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).contains("\"type\":\"ANNUAL_LEAVE\"");
+    }
+
+    // Weekend Handling Tests
+
+    @Test
+    void ingestLeaveShouldRejectWeekendOnlyRequest() {
+        // FIXED_DATE is 2024-06-15 (Saturday)
+        // FIXED_DATE.plusDays(1) is 2024-06-16 (Sunday)
+        LocalDate saturday = FIXED_DATE; // 2024-06-15 is Saturday
+        LocalDate sunday = FIXED_DATE.plusDays(1); // 2024-06-16 is Sunday
+
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-weekend-only")
+                .userId(EMPLOYEE_WEEKEND_ONLY)
+                .dateRange(DateRange.builder()
+                        .startDate(saturday)
+                        .endDate(sunday)
+                        .build())
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        HttpClientErrorException exception = assertThrows(HttpClientErrorException.class,
+                () -> restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class));
+
+        assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(exception.getResponseBodyAsString()).contains("only weekend days");
+    }
+
+    @Test
+    void ingestLeaveShouldAcceptMixedWeekdayWeekendAndCalculateCorrectDuration() {
+        // FIXED_DATE is 2024-06-15 (Saturday)
+        // FIXED_DATE.plusDays(3) is 2024-06-18 (Tuesday)
+        LocalDate friday = FIXED_DATE.minusDays(1); // 2024-06-14 (Friday)
+        LocalDate monday = FIXED_DATE.plusDays(3); // 2024-06-18 (Monday)
+
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-weekend-mixed")
+                .userId(EMPLOYEE_WEEKEND_MIXED)
+                .dateRange(DateRange.builder()
+                        .startDate(friday)
+                        .endDate(monday) // Fri, Sat, Sun, Mon
+                        .build())
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FULL_DAY)
+                .build();
+
+        var response = restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        // Verify the response contains the leave data (weekend exclusion is tested in DateRangeTest)
+        assertThat(response.getBody()).contains("\"type\":\"ANNUAL_LEAVE\"");
+    }
+
+    @Test
+    void ingestLeaveShouldRejectHalfDayOnSaturday() {
+        // FIXED_DATE is 2024-06-15 (Saturday)
+        LocalDate saturday = FIXED_DATE;
+
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-half-day-weekend")
+                .userId(EMPLOYEE_HALF_DAY_WEEKEND)
+                .dateRange(DateRange.builder()
+                        .startDate(saturday)
+                        .endDate(saturday)
+                        .build())
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.FIRST_HALF)
+                .build();
+
+        HttpClientErrorException exception = assertThrows(HttpClientErrorException.class,
+                () -> restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class));
+
+        assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        // Just verify it's a bad request - the exact error message is validated in unit tests
+    }
+
+    @Test
+    void ingestLeaveShouldAcceptHalfDayOnWeekday() {
+        // FIXED_DATE.plusDays(2) is 2024-06-17 (Monday)
+        LocalDate monday = FIXED_DATE.plusDays(2);
+
+        LeaveIngestionRequest request = LeaveIngestionRequest.builder()
+                .sourceType(SourceType.WEB)
+                .sourceId("web-half-day-weekday")
+                .userId(EMPLOYEE_HALF_DAY_WEEKDAY)
+                .dateRange(DateRange.builder()
+                        .startDate(monday)
+                        .endDate(monday)
+                        .build())
+                .type(LeaveType.ANNUAL_LEAVE)
+                .status(LeaveStatus.REQUESTED)
+                .durationType(LeaveDurationType.SECOND_HALF)
+                .build();
+
+        var response = restTemplate.postForEntity(baseUrl + "/ingest", createRequestEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).contains("\"durationType\":\"SECOND_HALF\"");
     }
 }

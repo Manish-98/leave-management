@@ -367,7 +367,7 @@ class SlackViewSubmissionIntegrationTest {
                                 "start_date_block": {
                                     "start_date_action": {
                                         "type": "datepicker",
-                                        "selected_date": "2024-07-20"
+                                        "selected_date": "2024-07-19"
                                     }
                                 }
                             }
@@ -392,11 +392,11 @@ class SlackViewSubmissionIntegrationTest {
         Thread.sleep(500);
 
         // Then - Database validation (end date should equal start date)
-        Map<String, Object> leaveRecord = getLeaveFromDatabase("123e4567-e89b-12d3-a456-426614174002", "2024-07-20", "2024-07-20");
+        Map<String, Object> leaveRecord = getLeaveFromDatabase("123e4567-e89b-12d3-a456-426614174002", "2024-07-19", "2024-07-19");
         assertThat(leaveRecord).isNotNull();
         assertThat(leaveRecord.get("user_id")).isEqualTo("123e4567-e89b-12d3-a456-426614174002");
-        assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 20));
-        assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 20));
+        assertThat(((java.sql.Date) leaveRecord.get("start_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 19));
+        assertThat(((java.sql.Date) leaveRecord.get("end_date")).toLocalDate()).isEqualTo(LocalDate.of(2024, 7, 19));
         assertThat(leaveRecord.get("type")).isEqualTo("ANNUAL_LEAVE");
         assertThat(leaveRecord.get("status")).isEqualTo("APPROVED");
         assertThat(leaveRecord.get("duration_type")).isEqualTo("SECOND_HALF");

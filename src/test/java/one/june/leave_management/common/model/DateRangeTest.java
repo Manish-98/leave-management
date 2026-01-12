@@ -82,8 +82,9 @@ class DateRangeTest {
 
     @Test
     void toDaysShouldCalculateCorrectly() {
-        LocalDate startDate = LocalDate.now().plusDays(1);
-        LocalDate endDate = LocalDate.now().plusDays(3);
+        // Using specific dates (Monday to Wednesday) to ensure consistent test behavior
+        LocalDate startDate = LocalDate.of(2024, 1, 8);  // Monday
+        LocalDate endDate = LocalDate.of(2024, 1, 10);   // Wednesday
         DateRange dateRange = DateRange.builder()
                 .startDate(startDate)
                 .endDate(endDate)
@@ -94,13 +95,61 @@ class DateRangeTest {
 
     @Test
     void toDaysForSingleDayShouldReturnOne() {
-        LocalDate date = LocalDate.now().plusDays(1);
+        LocalDate date = LocalDate.of(2024, 1, 8);  // Monday
         DateRange dateRange = DateRange.builder()
                 .startDate(date)
                 .endDate(date)
                 .build();
 
         assertEquals(1, dateRange.toDays());
+    }
+
+    @Test
+    void toDaysShouldExcludeWeekends() {
+        LocalDate friday = LocalDate.of(2024, 1, 5);   // Friday
+        LocalDate monday = LocalDate.of(2024, 1, 8);    // Monday
+        DateRange dateRange = DateRange.builder()
+                .startDate(friday)
+                .endDate(monday)
+                .build();
+
+        assertEquals(2, dateRange.toDays()); // Friday and Monday only (Saturday and Sunday excluded)
+    }
+
+    @Test
+    void toDaysShouldReturnZeroForWeekendOnly() {
+        LocalDate saturday = LocalDate.of(2024, 1, 6);   // Saturday
+        LocalDate sunday = LocalDate.of(2024, 1, 7);     // Sunday
+        DateRange dateRange = DateRange.builder()
+                .startDate(saturday)
+                .endDate(sunday)
+                .build();
+
+        assertEquals(0, dateRange.toDays());
+    }
+
+    @Test
+    void toDaysShouldHandleMultipleWeeks() {
+        LocalDate monday1 = LocalDate.of(2024, 1, 1);   // Monday
+        LocalDate friday2 = LocalDate.of(2024, 1, 12);  // Friday (2 weeks)
+        DateRange dateRange = DateRange.builder()
+                .startDate(monday1)
+                .endDate(friday2)
+                .build();
+
+        assertEquals(10, dateRange.toDays()); // 10 business days in 2 weeks
+    }
+
+    @Test
+    void toCalendarDaysShouldIncludeWeekends() {
+        LocalDate friday = LocalDate.of(2024, 1, 5);   // Friday
+        LocalDate monday = LocalDate.of(2024, 1, 8);    // Monday
+        DateRange dateRange = DateRange.builder()
+                .startDate(friday)
+                .endDate(monday)
+                .build();
+
+        assertEquals(4, dateRange.toCalendarDays()); // Friday, Saturday, Sunday, Monday
     }
 
     @Test

@@ -13,6 +13,7 @@ import one.june.leave_management.common.exception.SlackCommunicationException;
 import one.june.leave_management.common.exception.SlackModalException;
 import one.june.leave_management.common.exception.SlackPayloadParseException;
 import one.june.leave_management.common.exception.SlackSignatureVerificationException;
+import one.june.leave_management.common.exception.WeekendOnlyLeaveException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -56,6 +57,25 @@ public class GlobalExceptionHandler {
     ) {
         logger.warn("Invalid optional holiday request for user {} on date {}: {}",
                 ex.getUserId(), ex.getRequestedDate(), ex.getMessage());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(WeekendOnlyLeaveException.class)
+    public ResponseEntity<ErrorResponse> handleWeekendOnlyLeaveException(
+            WeekendOnlyLeaveException ex,
+            HttpServletRequest request
+    ) {
+        logger.warn("Weekend-only leave request from {} to {}: {}",
+                ex.getStartDate(), ex.getEndDate(), ex.getMessage());
 
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .status(HttpStatus.BAD_REQUEST.value())

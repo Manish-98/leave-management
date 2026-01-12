@@ -555,6 +555,11 @@ public class SlackLeaveOrchestrator {
 
     /**
      * Handles slash command without text - uses traditional modal flow.
+     * <p>
+     * This method:
+     * 1. Posts a thread anchor message to get a timestamp
+     * 2. Uses that timestamp for all subsequent threaded replies
+     * 3. Opens the modal for user to fill in leave details
      *
      * @param commandRequest The parsed slash command request
      */
@@ -562,25 +567,27 @@ public class SlackLeaveOrchestrator {
         // Create user tag for mentioning the user
         String userTag = "<@" + commandRequest.getUserId() + ">";
 
-        // Open modal IMMEDIATELY and SYNCHRONOUSLY (trigger_id expires after 3 seconds!)
-        log.info("Opening modal immediately with trigger_id: {}", commandRequest.getTriggerId());
-        openLeaveApplicationModal(commandRequest, commandRequest.getMessageTs());
+        // Post thread anchor message to get a timestamp for threading
+        log.info("Posting thread anchor message for modal-based leave request");
+        SlackMessageResponse anchorResponse = postThreadAnchorMessage(
+                commandRequest.getChannelId(),
+                null,  // No thread_ts yet - this becomes the anchor
+                userTag,
+                "Opening leave request modal...",
+                null  // No original text for modal flow
+        );
 
-        // Send initiation message as threaded reply ASYNCHRONOUSLY (don't delay modal opening)
-        asyncUtility.executeAsync(() -> {
-            try {
-                SlackMessageRequest message = SlackMessageTemplate.leaveRequestInitiated(
-                        commandRequest.getChannelId(),
-                        commandRequest.getMessageTs(),  // Use as thread_ts
-                        userTag,
-                        "Opening leave request modal...",
-                        null  // No original text for modal flow
-                );
-                slackApiClient.postMessage(commandRequest.getChannelId(), message);
-            } catch (Exception e) {
-                log.error("Failed to post initiation message", e);
-            }
-        });
+        // Get the timestamp of the anchor message
+        String threadTs = (anchorResponse != null) ? anchorResponse.getTs() : null;
+
+        if (threadTs == null) {
+            log.error("Failed to get thread anchor timestamp, messages may not be threaded");
+        }
+
+        // Open modal IMMEDIATELY and SYNCHRONOUSLY (trigger_id expires after 3 seconds!)
+        log.info("Opening modal immediately with trigger_id: {}, thread_ts: {}",
+                commandRequest.getTriggerId(), threadTs);
+        openLeaveApplicationModal(commandRequest, threadTs);
     }
 
     /**

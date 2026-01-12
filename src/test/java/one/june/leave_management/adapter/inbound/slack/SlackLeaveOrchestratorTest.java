@@ -860,8 +860,8 @@ class SlackLeaveOrchestratorTest {
         }
 
         @Test
-        @DisplayName("Should run asynchronously")
-        void shouldRunAsynchronously() throws Exception {
+        @DisplayName("Should run synchronously for no-text modal flow")
+        void shouldRunSynchronouslyForNoTextModal() throws Exception {
             // Given
             SlackCommandRequest slackRequest = createValidSlackCommandRequest();
             SlackMessageResponse messageResponse = new SlackMessageResponse();
@@ -873,29 +873,21 @@ class SlackLeaveOrchestratorTest {
                 return new SlackMessageResponse();
             });
 
-            // Make asyncUtility actually run async for this test
-            CountDownLatch latch = new CountDownLatch(1);
-            doAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(0);
-                new Thread(() -> {
-                    runnable.run();
-                    latch.countDown();
-                }).start();
-                return null;
-            }).when(asyncUtility).executeAsync(any());
-
             long startTime = System.currentTimeMillis();
 
-            // When - call handleSlashCommand which uses async wrapper
+            // When - call handleSlashCommand which posts anchor and opens modal synchronously
             orchestrator.handleSlashCommand(slackRequest);
 
             long endTime = System.currentTimeMillis();
 
-            // Then - Should return immediately (within 200ms for async dispatch)
-            assertThat(endTime - startTime).isLessThan(200);
+            // Then - Should complete synchronously (allowing time for message + modal)
+            // The modal opening takes 100ms, so total should be > 100ms but reasonable
+            assertThat(endTime - startTime).isGreaterThan(100);
+            assertThat(endTime - startTime).isLessThan(500);
 
-            // Wait for async processing to complete
-            assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+            // Verify both operations were called
+            verify(slackApiClient).postMessage(eq(slackRequest.getChannelId()), any());
+            verify(slackApiClient).openModal(eq(slackRequest.getTriggerId()), any());
         }
     }
 
@@ -2009,7 +2001,10 @@ class SlackLeaveOrchestratorTest {
             // Given
             SlackCommandRequest slackRequest = createValidSlackCommandRequest();
             slackRequest.setText("");
+            SlackMessageResponse messageResponse = new SlackMessageResponse();
+            messageResponse.setTs(TEST_THREAD_TS);
 
+            when(slackApiClient.postMessage(any(), any())).thenReturn(messageResponse);
             when(slackApiClient.openModal(any(), any()))
                     .thenReturn(SlackViewOpenResponse.builder()
                             .view(SlackViewOpenResponse.SlackViewResponse.builder().build())
@@ -2019,8 +2014,10 @@ class SlackLeaveOrchestratorTest {
             orchestrator.handleSlashCommand(slackRequest);
 
             // Then
+            // Should post thread anchor message first
+            verify(slackApiClient).postMessage(eq(slackRequest.getChannelId()), any());
+            // Should open modal with thread timestamp from anchor message
             verify(slackApiClient).openModal(eq(slackRequest.getTriggerId()), any());
-            verify(slackApiClient, never()).postMessage(anyString(), any());
         }
 
         @Test
@@ -2029,7 +2026,10 @@ class SlackLeaveOrchestratorTest {
             // Given
             SlackCommandRequest slackRequest = createValidSlackCommandRequest();
             slackRequest.setText("   ");
+            SlackMessageResponse messageResponse = new SlackMessageResponse();
+            messageResponse.setTs(TEST_THREAD_TS);
 
+            when(slackApiClient.postMessage(any(), any())).thenReturn(messageResponse);
             when(slackApiClient.openModal(any(), any()))
                     .thenReturn(SlackViewOpenResponse.builder()
                             .view(SlackViewOpenResponse.SlackViewResponse.builder().build())
@@ -2039,8 +2039,10 @@ class SlackLeaveOrchestratorTest {
             orchestrator.handleSlashCommand(slackRequest);
 
             // Then
+            // Should post thread anchor message first
+            verify(slackApiClient).postMessage(eq(slackRequest.getChannelId()), any());
+            // Should open modal with thread timestamp from anchor message
             verify(slackApiClient).openModal(eq(slackRequest.getTriggerId()), any());
-            verify(slackApiClient, never()).postMessage(anyString(), any());
         }
     }
 

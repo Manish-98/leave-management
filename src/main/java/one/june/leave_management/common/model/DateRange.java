@@ -1,6 +1,7 @@
 package one.june.leave_management.common.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import one.june.leave_management.common.util.BusinessDayUtil;
 import one.june.leave_management.common.validation.ValidDateRange;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -38,9 +39,21 @@ public class DateRange {
     private LocalDate endDate;
 
     /**
-     * Returns the duration of this date range in days
+     * Returns the duration of this date range in business days (excluding weekends).
+     * Weekends are defined as Saturday and Sunday.
      */
     public long toDays() {
+        if (startDate == null || endDate == null) {
+            return 0;
+        }
+        return BusinessDayUtil.countBusinessDays(startDate, endDate);
+    }
+
+    /**
+     * Returns the duration of this date range in calendar days (including weekends).
+     * This is the total number of days from start to end, inclusive.
+     */
+    public long toCalendarDays() {
         if (startDate == null || endDate == null) {
             return 0;
         }

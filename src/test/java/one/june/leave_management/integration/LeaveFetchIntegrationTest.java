@@ -493,10 +493,10 @@ class LeaveFetchIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         String body = response.getBody();
 
-        // Should show actual durations without adjustment
+        // Should show durations excluding weekends
         assertThat(body).contains("\"startDate\":\"2024-03-01\",\"endDate\":\"2024-03-10\"");
-        // Duration should be 10 days (actual duration)
-        assertThat(body).contains("\"durationInDays\":10.0");
+        // Duration should be 6 business days (excluding weekends: 2 weekends in March 1-10)
+        assertThat(body).contains("\"durationInDays\":6.0");
     }
 
     @Test
