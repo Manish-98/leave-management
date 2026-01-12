@@ -4,6 +4,7 @@ import one.june.leave_management.adapter.outbound.slack.builder.SlackMessageBuil
 import one.june.leave_management.adapter.outbound.slack.dto.SlackMessageRequest;
 import one.june.leave_management.application.genai.dto.ParsedLeaveRequest;
 import one.june.leave_management.application.leave.dto.LeaveDto;
+import one.june.leave_management.domain.leave.model.LeaveStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -346,7 +347,7 @@ public class SlackMessageTemplate {
         fields.put("Leave ID", deletedLeave.getId().toString());
         fields.put("Type", deletedLeave.getType().toString());
         fields.put("Dates", dates);
-        fields.put("Previous Status", deletedLeave.getStatus() == one.june.leave_management.domain.leave.model.LeaveStatus.DEACTIVATED
+        fields.put("Previous Status", deletedLeave.getStatus() == LeaveStatus.DEACTIVATED
                 ? "APPROVED/REQUESTED" : deletedLeave.getStatus().toString());
 
         return SlackMessageBuilder

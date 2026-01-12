@@ -12,6 +12,7 @@ import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.domain.leave.model.Leave;
 import one.june.leave_management.domain.leave.model.LeaveFilters;
 import one.june.leave_management.domain.leave.model.LeaveSourceRef;
+import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.BulkUploadJob;
 import one.june.leave_management.domain.leave.model.BulkUploadRecord;
 import one.june.leave_management.domain.leave.model.SourceType;
@@ -460,13 +461,13 @@ public class LeaveService {
         }
 
         // Check if already deactivated
-        if (leave.getStatus() == one.june.leave_management.domain.leave.model.LeaveStatus.DEACTIVATED) {
+        if (leave.getStatus() == LeaveStatus.DEACTIVATED) {
             logger.info("Leave {} is already deactivated", leaveId);
             return leaveMapper.toDto(leave);
         }
 
         // Update status to DEACTIVATED
-        leave.setStatus(one.june.leave_management.domain.leave.model.LeaveStatus.DEACTIVATED);
+        leave.setStatus(LeaveStatus.DEACTIVATED);
         Leave updatedLeave = leaveRepository.save(leave);
 
         logger.info("Successfully soft deleted leave {} for user {}", leaveId, requestingUserId);
