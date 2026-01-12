@@ -6,6 +6,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackAction;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionValue;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackCommandRequest;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewClosedRequest;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewState;
@@ -1558,13 +1559,13 @@ public class SlackLeaveOrchestrator {
      *
      * @param slackUserId The Slack user ID
      * @return The employee UUID as a string
-     * @throws EmployeeNotFoundException if employee not found
+     * @throws IllegalArgumentException if employee not found
      */
     private String getEmployeeIdFromSlackUserId(String slackUserId) {
         // Look up employee by Slack ID
         one.june.leave_management.domain.employee.model.Employee employee =
                 employeeRepository.findBySlackId(slackUserId)
-                        .orElseThrow(() -> new EmployeeNotFoundException(
+                        .orElseThrow(() -> new IllegalArgumentException(
                                 "Employee not found for Slack user ID: " + slackUserId));
         return employee.getId().toString();
     }
@@ -1755,22 +1756,13 @@ public class SlackLeaveOrchestrator {
         try {
             SlackViewState state = submissionRequest.getView().getState();
             if (state != null && state.getValues() != null) {
-                Map<String, Map<String, Object>> values = state.getValues();
+                Map<String, Map<String, SlackBlockActionValue>> values = state.getValues();
                 if (values.containsKey("leave_select_block")) {
-                    Map<String, Object> blockValues = values.get("leave_select_block");
+                    Map<String, SlackBlockActionValue> blockValues = values.get("leave_select_block");
                     if (blockValues.containsKey("leave_select_action")) {
-                        Object actionValue = blockValues.get("leave_select_action");
-                        if (actionValue instanceof Map) {
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object> actionMap = (Map<String, Object>) actionValue;
-                            if (actionMap.containsKey("selected_option")) {
-                                Object selectedOption = actionMap.get("selected_option");
-                                if (selectedOption instanceof Map) {
-                                    @SuppressWarnings("unchecked")
-                                    Map<String, Object> optionMap = (Map<String, Object>) selectedOption;
-                                    return (String) optionMap.get("value");
-                                }
-                            }
+                        SlackBlockActionValue actionValue = blockValues.get("leave_select_action");
+                        if (actionValue != null && actionValue.getSelectedOption() != null) {
+                            return actionValue.getSelectedOption().getValue();
                         }
                     }
                 }

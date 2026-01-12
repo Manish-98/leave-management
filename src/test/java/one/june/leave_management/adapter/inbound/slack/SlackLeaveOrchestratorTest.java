@@ -26,6 +26,7 @@ import one.june.leave_management.common.async.AsyncUtility;
 import one.june.leave_management.common.mapper.LeaveMapper;
 import one.june.leave_management.adapter.inbound.slack.mapper.SlackLeaveRequestMapper;
 import one.june.leave_management.common.model.DateRange;
+import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import one.june.leave_management.domain.leave.model.LeaveDurationType;
 import one.june.leave_management.domain.leave.model.LeaveStatus;
 import one.june.leave_management.domain.leave.model.LeaveType;
@@ -89,6 +90,9 @@ class SlackLeaveOrchestratorTest {
     @Mock
     private AsyncUtility asyncUtility;
 
+    @Mock
+    private EmployeeRepository employeeRepository;
+
     private SlackLeaveOrchestrator orchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -110,7 +114,8 @@ class SlackLeaveOrchestratorTest {
                 optionalHolidayService,
                 slackLeaveRequestMapper,
                 leaveParsingService,
-                asyncUtility
+                asyncUtility,
+                employeeRepository
         );
     }
 
