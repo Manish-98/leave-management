@@ -229,7 +229,7 @@ public class SlackLeaveRequestMapper {
                 .userId(employee.getId().toString()) // Store employee's internal UUID
                 .dateRange(dateRange)
                 .type(parsedRequest.getLeaveType())
-                .status(LeaveStatus.REQUESTED) // AI-parsed requests start as REQUESTED (not APPROVED)
+                .status(LeaveStatus.APPROVED)
                 .durationType(durationType)
                 .build();
 

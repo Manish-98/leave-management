@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -296,18 +297,81 @@ public class SlackMessageTemplate {
     }
 
     /**
+     * Creates an anchor message for delete-leave request initiation.
+     * <p>
+     * This message serves as the thread anchor for all subsequent updates about the deletion.
+     *
+     * @param channelId   The channel ID where the message will be posted
+     * @param threadTs    The thread timestamp to reply to
+     * @param userTag     The Slack user tag (e.g., "&lt;@U12345&gt;")
+     * @param status      The status message to display
+     * @param leaveDates  The leave dates being deleted (optional, can be null)
+     * @return A SlackMessageRequest object ready to be sent
+     */
+    public static SlackMessageRequest deleteLeaveInitiated(String channelId, String threadTs, String userTag, String status, String leaveDates) {
+        String message;
+        if (leaveDates != null && !leaveDates.isBlank()) {
+            message = "🗑️ Leave deletion request for " + userTag + " - \"" + leaveDates + "\" - " + status;
+        } else {
+            message = "🗑️ Leave deletion request for " + userTag + " - " + status;
+        }
+
+        return SlackMessageBuilder
+                .create(message)
+                .toChannel(channelId)
+                .inThread(threadTs)
+                .build();
+    }
+
+    /**
      * Creates a message when no active leaves are available for deletion.
      *
      * @param channelId The channel ID to post to
+     * @param threadTs  The thread timestamp for posting threaded replies (optional)
      * @param userTag   The Slack user tag
      * @return A SlackMessageRequest object ready to be sent
      */
-    public static SlackMessageRequest noLeavesAvailable(String channelId, String userTag) {
+    public static SlackMessageRequest noLeavesAvailable(String channelId, String threadTs, String userTag) {
         return SlackMessageBuilder
                 .create("ℹ️ No active leave requests found for " + userTag)
                 .withHeader("ℹ️ No Active Leaves", true)
                 .withSection("You don't have any active leave requests to delete.")
                 .toChannel(channelId)
+                .inThread(threadTs)
+                .build();
+    }
+
+    /**
+     * Creates a message with a "Select Leaves" button for opening the deletion modal.
+     * <p>
+     * This button provides a fresh trigger_id that avoids the 3-second expiration issue.
+     *
+     * @param channelId The channel ID to post to
+     * @param threadTs  The thread timestamp for posting threaded replies
+     * @param userTag   The Slack user tag
+     * @return A SlackMessageRequest object ready to be sent
+     */
+    public static SlackMessageRequest selectLeavesButton(String channelId, String threadTs, String userTag) {
+        return SlackMessageBuilder
+                .create("🗑️ Leave deletion for " + userTag)
+                .withHeader("🗑️ Delete Leave Request", true)
+                .withSection("Click the button below to select a leave request to delete:")
+                .withButton("Select Leaves to Delete", "select_leaves_button", "select_leaves", "primary")
+                .toChannel(channelId)
+                .inThread(threadTs)
+                .build();
+    }
+
+    /**
+     * Creates a message to replace the button after it's clicked.
+     * <p>
+     * This removes the button and shows that the modal is opening.
+     *
+     * @return A SlackMessageRequest object ready to be sent
+     */
+    public static SlackMessageRequest selectLeavesButtonClicked() {
+        return SlackMessageBuilder
+                .create("⏳ Opening leave selection modal...")
                 .build();
     }
 
@@ -315,11 +379,12 @@ public class SlackMessageTemplate {
      * Creates an error message for delete-leave command failures.
      *
      * @param channelId    The channel ID to post to
+     * @param threadTs     The thread timestamp for posting threaded replies (optional)
      * @param userTag      The Slack user tag
      * @param errorMessage The error message
      * @return A SlackMessageRequest object ready to be sent
      */
-    public static SlackMessageRequest deleteLeaveError(String channelId, String userTag, String errorMessage) {
+    public static SlackMessageRequest deleteLeaveError(String channelId, String threadTs, String userTag, String errorMessage) {
         return SlackMessageBuilder
                 .create("❌ Failed to process delete leave request for " + userTag)
                 .withHeader("❌ Delete Leave Error", true)
@@ -328,6 +393,7 @@ public class SlackMessageTemplate {
                 .withDivider()
                 .withSection("Please try again or contact HR for assistance.")
                 .toChannel(channelId)
+                .inThread(threadTs)
                 .build();
     }
 
@@ -335,11 +401,12 @@ public class SlackMessageTemplate {
      * Creates a success message when a leave is deleted.
      *
      * @param channelId    The channel ID to post to
+     * @param threadTs     The thread timestamp for posting threaded replies (optional)
      * @param userTag      The Slack user tag
      * @param deletedLeave The deleted leave details
      * @return A SlackMessageRequest object ready to be sent
      */
-    public static SlackMessageRequest leaveDeleted(String channelId, String userTag, LeaveDto deletedLeave) {
+    public static SlackMessageRequest leaveDeleted(String channelId, String threadTs, String userTag, LeaveDto deletedLeave) {
         String dates = formatLeaveDates(deletedLeave);
 
         Map<String, String> fields = new HashMap<>();
@@ -355,6 +422,7 @@ public class SlackMessageTemplate {
                 .withHeader("🗑️ Leave Deleted", true)
                 .withFields(fields)
                 .toChannel(channelId)
+                .inThread(threadTs)
                 .build();
     }
 
@@ -362,11 +430,12 @@ public class SlackMessageTemplate {
      * Creates a failure message when leave deletion fails.
      *
      * @param channelId    The channel ID to post to
+     * @param threadTs     The thread timestamp for posting threaded replies (optional)
      * @param userTag      The Slack user tag
      * @param errorMessage The error message
      * @return A SlackMessageRequest object ready to be sent
      */
-    public static SlackMessageRequest leaveDeleteFailed(String channelId, String userTag, String errorMessage) {
+    public static SlackMessageRequest leaveDeleteFailed(String channelId, String threadTs, String userTag, String errorMessage) {
         return SlackMessageBuilder
                 .create("❌ Failed to delete leave for " + userTag)
                 .withHeader("❌ Leave Deletion Failed", true)
@@ -375,6 +444,7 @@ public class SlackMessageTemplate {
                 .withDivider()
                 .withSection("The leave may have already been deleted or you may not have permission.")
                 .toChannel(channelId)
+                .inThread(threadTs)
                 .build();
     }
 }

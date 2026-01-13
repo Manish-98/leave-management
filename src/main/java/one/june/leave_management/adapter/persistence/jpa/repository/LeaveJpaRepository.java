@@ -19,9 +19,11 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
     /**
      * Find leaves that overlap with the given date range for a specific user
      * Uses date range overlap logic: (start1 <= end2) AND (end1 >= start2)
+     * Excludes DEACTIVATED leaves from validation.
      */
     @Query("SELECT l FROM LeaveJpaEntity l WHERE l.userId = :userId " +
-           "AND l.startDate <= :endDate AND l.endDate >= :startDate")
+           "AND l.startDate <= :endDate AND l.endDate >= :startDate " +
+           "AND l.status != 'DEACTIVATED'")
     List<LeaveJpaEntity> findOverlappingLeaves(
             @Param("userId") String userId,
             @Param("startDate") LocalDate startDate,
@@ -30,10 +32,12 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
     /**
      * Find leaves that overlap with the given date range for a specific user, excluding a specific leave ID
      * Uses date range overlap logic: (start1 <= end2) AND (end1 >= start2)
+     * Excludes DEACTIVATED leaves from validation.
      */
     @Query("SELECT l FROM LeaveJpaEntity l WHERE l.userId = :userId " +
            "AND l.startDate <= :endDate AND l.endDate >= :startDate " +
-           "AND l.id != :excludeLeaveId")
+           "AND l.id != :excludeLeaveId " +
+           "AND l.status != 'DEACTIVATED'")
     List<LeaveJpaEntity> findOverlappingLeaves(
             @Param("userId") String userId,
             @Param("startDate") LocalDate startDate,
@@ -44,6 +48,7 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
      * Find leaves by filters with pagination support.
      * All filters are optional - null values will be ignored.
      * Uses date range overlap logic to find leaves that intersect with the specified date range.
+     * Excludes DEACTIVATED leaves from results.
      * Default sorting is applied at the service layer (startDate DESC).
      * Clients can override the default sort order using Pageable sort parameters.
      *
@@ -57,7 +62,8 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
            "LEFT JOIN FETCH l.sourceRefs WHERE " +
            "(:userIds IS NULL OR l.userId IN :userIds) AND " +
            "(:startDate IS NULL OR l.endDate >= :startDate) AND " +
-           "(:endDate IS NULL OR l.startDate <= :endDate)")
+           "(:endDate IS NULL OR l.startDate <= :endDate) AND " +
+           "l.status != 'DEACTIVATED'")
     Page<LeaveJpaEntity> findByFilters(
             @Param("userIds") List<String> userIds,
             @Param("startDate") java.time.LocalDate startDate,
@@ -68,6 +74,7 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
      * Find leaves by filters with pagination support - date range variant.
      * This method is used when startDate and endDate are both non-null.
      * Using function expressions to provide type hints for PostgreSQL JDBC driver.
+     * Excludes DEACTIVATED leaves from results.
      *
      * @param userIds optional list of user IDs to filter by
      * @param startDate start date (non-null)
@@ -78,7 +85,8 @@ public interface LeaveJpaRepository extends JpaRepository<LeaveJpaEntity, UUID> 
     @Query("SELECT l FROM LeaveJpaEntity l " +
            "LEFT JOIN FETCH l.sourceRefs WHERE " +
            "(:userIds IS NULL OR l.userId IN :userIds) AND " +
-           "l.endDate >= :startDate AND l.startDate <= :endDate")
+           "l.endDate >= :startDate AND l.startDate <= :endDate AND " +
+           "l.status != 'DEACTIVATED'")
     Page<LeaveJpaEntity> findByFiltersWithDateRange(
             @Param("userIds") List<String> userIds,
             @Param("startDate") java.time.LocalDate startDate,
