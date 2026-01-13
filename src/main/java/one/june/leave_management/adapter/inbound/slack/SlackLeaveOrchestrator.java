@@ -6,8 +6,10 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackAction;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionRequest;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackBlockActionValue;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackCommandRequest;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewClosedRequest;
+import one.june.leave_management.adapter.inbound.slack.dto.SlackViewState;
 import one.june.leave_management.adapter.inbound.slack.dto.SlackViewSubmissionRequest;
 import one.june.leave_management.adapter.inbound.slack.mapper.SlackLeaveRequestMapper;
 import one.june.leave_management.adapter.inbound.slack.util.SlackMessageTemplate;
@@ -31,12 +33,18 @@ import one.june.leave_management.application.leave.dto.LeaveDto;
 import one.june.leave_management.application.leave.service.LeaveService;
 import one.june.leave_management.application.leave.service.OptionalHolidayService;
 import one.june.leave_management.common.async.AsyncUtility;
+import one.june.leave_management.common.exception.EmployeeNotFoundException;
 import one.june.leave_management.common.mapper.LeaveMapper;
+import one.june.leave_management.domain.employee.port.EmployeeRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Orchestrator for Slack-specific leave request workflows
@@ -66,6 +74,7 @@ public class SlackLeaveOrchestrator {
     private final SlackLeaveRequestMapper slackLeaveRequestMapper;
     private final LeaveParsingService leaveParsingService;
     private final AsyncUtility asyncUtility;
+    private final EmployeeRepository employeeRepository;
 
     public SlackLeaveOrchestrator(
             LeaveService leaveService,
@@ -74,7 +83,8 @@ public class SlackLeaveOrchestrator {
             OptionalHolidayService optionalHolidayService,
             SlackLeaveRequestMapper slackLeaveRequestMapper,
             LeaveParsingService leaveParsingService,
-            AsyncUtility asyncUtility
+            AsyncUtility asyncUtility,
+            EmployeeRepository employeeRepository
     ) {
         this.leaveService = leaveService;
         this.leaveMapper = leaveMapper;
@@ -83,6 +93,7 @@ public class SlackLeaveOrchestrator {
         this.slackLeaveRequestMapper = slackLeaveRequestMapper;
         this.leaveParsingService = leaveParsingService;
         this.asyncUtility = asyncUtility;
+        this.employeeRepository = employeeRepository;
     }
 
     /**
@@ -224,9 +235,9 @@ public class SlackLeaveOrchestrator {
      * <p>
      * This method:
      * 1. Parses the form-encoded payload to extract the view submission request
-     * 2. Extracts thread context from private_metadata
-     * 3. Maps the Slack request to a LeaveIngestionRequest
-     * 4. Triggers async leave processing with thread context
+     * 2. Routes based on callback_id (leave_application_submit or delete_leave_submit)
+     * 3. For leave applications: extracts thread context, maps to ingestion request, triggers async processing
+     * 4. For delete leave: validates selection, performs soft delete, posts success/error message
      * <p>
      * This method is called by the controller after signature verification.
      * It coordinates the parsing, mapping, and workflow initiation.
@@ -244,10 +255,21 @@ public class SlackLeaveOrchestrator {
                 SlackViewSubmissionRequest.class
         );
 
-        log.info("View submission from user: {}, view ID: {}",
+        log.info("View submission from user: {}, view ID: {}, callback_id: {}",
                 submissionRequest.getUser().getId(),
-                submissionRequest.getView().getId());
+                submissionRequest.getView().getId(),
+                submissionRequest.getView().getCallbackId());
 
+        // Route based on callback_id
+        String callbackId = submissionRequest.getView().getCallbackId();
+        if ("delete_leave_submit".equals(callbackId)) {
+            // Handle delete leave submission
+            log.info("Routing to delete leave handler");
+            handleDeleteLeaveSubmission(submissionRequest);
+            return;
+        }
+
+        // Default: Handle leave application submission (existing flow)
         // Extract thread info from private_metadata
         String metadataJson = submissionRequest.getView().getPrivateMetadata();
         String userId = SlackMetadataUtil.extractUserId(metadataJson);
@@ -380,6 +402,7 @@ public class SlackLeaveOrchestrator {
      * This routes to:
      * - confirm_leave_action → Create leave directly
      * - edit_leave_action → Open modal with pre-filled data
+     * - select_leaves_button → Open delete leave modal with fresh trigger_id
      *
      * @param blockActionRequest The block action request
      * @param action             The action that was triggered
@@ -396,6 +419,9 @@ public class SlackLeaveOrchestrator {
         } else if ("open_modal_action".equals(actionId)) {
             log.info("Handling open modal action");
             handleOpenModalAction(blockActionRequest, action);
+        } else if ("select_leaves_button".equals(actionId)) {
+            log.info("Handling select leaves button action");
+            handleSelectLeavesButton(blockActionRequest, action);
         } else {
             log.warn("Unknown message button action ID: {}", actionId);
             throw new RuntimeException("Unknown message button action ID: " + actionId);
@@ -1485,5 +1511,485 @@ public class SlackLeaveOrchestrator {
                 .withBlocks(blocks)
                 .withPrivateMetadata(metadataJson)
                 .build();
+    }
+
+    /**
+     * Handles /delete-leave slash command from Slack
+     * <p>
+     * This method:
+     * 1. Returns immediately to avoid Slack timeout
+     * 2. Triggers async processing to fetch and display leaves
+     * <p>
+     * Uses response_url pattern: return fast, then post updates asynchronously.
+     * This avoids both the 3-second HTTP timeout and trigger_id expiration issues.
+     *
+     * @param commandRequest The parsed slash command request
+     */
+    public void handleDeleteLeaveSlashCommand(SlackCommandRequest commandRequest) {
+        log.info("Handling /delete-leave command from user: {} in channel: {}",
+                commandRequest.getUserId(),
+                commandRequest.getChannelName());
+
+        // Trigger async processing to fetch leaves and post message with buttons
+        asyncUtility.executeAsync(() -> processDeleteLeaveWithButtons(commandRequest));
+
+        log.info("Successfully initiated delete leave command workflow");
+    }
+
+    /**
+     * Processes delete leave request asynchronously with button-based UI.
+     * <p>
+     * This method:
+     * 1. Posts an anchor message
+     * 2. Posts a message with a "Select Leaves" button
+     * 3. User clicks button → gets fresh trigger_id → opens modal
+     * <p>
+     * Runs asynchronously to avoid blocking the HTTP response.
+     * Uses button pattern to get fresh trigger_id (avoids expiration).
+     *
+     * @param commandRequest The parsed slash command request
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processDeleteLeaveWithButtons(SlackCommandRequest commandRequest) {
+        log.info("Processing delete leave request with button for user: {}",
+                commandRequest.getUserId());
+
+        String userTag = "<@" + commandRequest.getUserId() + ">";
+        String channelId = commandRequest.getChannelId();
+
+        try {
+            // Post anchor message
+            log.info("Posting thread anchor message");
+            SlackMessageResponse anchorResponse = postThreadAnchorMessage(
+                    channelId,
+                    null,
+                    userTag,
+                    "Loading leave deletion options...",
+                    null
+            );
+
+            String threadTs = (anchorResponse != null) ? anchorResponse.getTs() : null;
+
+            // Post message with "Select Leaves" button
+            log.info("Posting message with select leaves button");
+            postSelectLeavesButtonMessage(channelId, threadTs, userTag);
+
+        } catch (Exception e) {
+            log.error("Failed to process delete leave request for user: {}",
+                    commandRequest.getUserId(), e);
+            postDeleteLeaveErrorToThread(channelId, userTag, e.getMessage());
+        }
+    }
+
+    /**
+     * Handles the "Select Leaves to Delete" button click.
+     * <p>
+     * This method:
+     * 1. Updates the button message to remove the button (shows "Opening modal...")
+     * 2. Gets a FRESH trigger_id from the button click (valid for 3 seconds)
+     * 3. Fetches leaves from database
+     * 4. Opens modal immediately
+     * <p>
+     * Called from handleBlockAction when user clicks the button.
+     *
+     * @param blockActionRequest The block action request
+     * @param action             The action that was triggered
+     */
+    private void handleSelectLeavesButton(SlackBlockActionRequest blockActionRequest, SlackAction action) {
+        String channelId = blockActionRequest.getContainer().getChannelId();
+        String messageTs = blockActionRequest.getContainer().getMessageTs();
+        String threadTs = blockActionRequest.getContainer().getThreadTs();
+        String userId = blockActionRequest.getUser().getId();
+        String triggerId = blockActionRequest.getTriggerId();
+
+        log.info("Handling select leaves button click for user: {}, trigger_id: {}", userId, triggerId);
+
+        // First: Update the button message to remove the button and show processing status
+        updateSelectLeavesButtonMessage(channelId, messageTs);
+
+        try {
+            // Fetch leaves from database synchronously (must be fast!)
+            String employeeId = getEmployeeIdFromSlackUserId(userId);
+            List<LeaveDto> activeLeaves = leaveService.findActiveLeavesByUserId(employeeId);
+
+            if (activeLeaves.isEmpty()) {
+                // No leaves available
+                log.info("No active leaves found for user: {}", userId);
+                String userTag = "<@" + userId + ">";
+                postNoLeavesAvailableToThread(channelId, threadTs, userTag);
+            } else {
+                // Open modal with leave selection IMMEDIATELY
+                log.info("Found {} active leaves, opening modal now", activeLeaves.size());
+                openDeleteLeaveModalWithTrigger(triggerId, userId, channelId, threadTs, activeLeaves);
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to open delete leave modal for user: {}", userId, e);
+            String userTag = "<@" + userId + ">";
+            postDeleteLeaveErrorToThread(channelId, userTag, e.getMessage());
+        }
+    }
+
+    /**
+     * Gets the employee ID (UUID) from a Slack user ID.
+     * This is a helper method that looks up the employee by Slack ID.
+     *
+     * @param slackUserId The Slack user ID
+     * @return The employee UUID as a string
+     * @throws IllegalArgumentException if employee not found
+     */
+    private String getEmployeeIdFromSlackUserId(String slackUserId) {
+        // Look up employee by Slack ID
+        one.june.leave_management.domain.employee.model.Employee employee =
+                employeeRepository.findBySlackId(slackUserId)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Employee not found for Slack user ID: " + slackUserId));
+        return employee.getId().toString();
+    }
+
+    /**
+     * Posts a message with a "Select Leaves" button.
+     *
+     * @param channelId The channel ID
+     * @param threadTs  The thread timestamp
+     * @param userTag   The user tag
+     */
+    private void postSelectLeavesButtonMessage(String channelId, String threadTs, String userTag) {
+        try {
+            SlackMessageRequest message = SlackMessageTemplate.selectLeavesButton(
+                    channelId, threadTs, userTag
+            );
+            slackApiClient.postThreadReply(channelId, threadTs, message);
+            log.info("Posted select leaves button message");
+        } catch (Exception e) {
+            log.error("Failed to post select leaves button message", e);
+        }
+    }
+
+    /**
+     * Updates the "Select Leaves" button message to remove the button.
+     * <p>
+     * This is called when the user clicks the button to prevent them from clicking it again.
+     *
+     * @param channelId  The channel ID
+     * @param messageTs  The message timestamp to update
+     */
+    private void updateSelectLeavesButtonMessage(String channelId, String messageTs) {
+        try {
+            SlackMessageRequest newMessage = SlackMessageTemplate.selectLeavesButtonClicked();
+            slackApiClient.updateMessage(channelId, messageTs, newMessage);
+            log.info("Updated select leaves button message (removed button)");
+        } catch (Exception e) {
+            log.error("Failed to update select leaves button message", e);
+            // Don't throw - the button action should still proceed even if update fails
+        }
+    }
+
+    /**
+     * Opens a delete leave modal using the provided trigger_id.
+     *
+     * @param triggerId   The fresh trigger_id from button click
+     * @param userId      The Slack user ID
+     * @param channelId   The channel ID
+     * @param threadTs    The thread timestamp
+     * @param activeLeaves List of active leaves
+     */
+    private void openDeleteLeaveModalWithTrigger(String triggerId, String userId, String channelId, String threadTs, List<LeaveDto> activeLeaves) {
+        try {
+            log.info("Building delete leave modal with {} leaves", activeLeaves.size());
+
+            // Build modal with thread context
+            SlackModalView modalView = buildDeleteLeaveModalWithThread(userId, channelId, threadTs, activeLeaves);
+
+            log.debug("Delete leave modal structure: {}", modalView);
+
+            slackApiClient.openModal(triggerId, modalView);
+
+            log.info("Delete leave modal opened successfully for user: {}", userId);
+
+        } catch (Exception e) {
+            log.error("Failed to open delete leave modal for user: {}", userId, e);
+            String userTag = "<@" + userId + ">";
+            postDeleteLeaveErrorToThread(channelId, userTag, "Failed to open modal: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Builds a delete leave modal with thread context.
+     *
+     * @param userId       The Slack user ID
+     * @param channelId    The channel ID
+     * @param threadTs     The thread timestamp
+     * @param activeLeaves List of active leaves
+     * @return Configured modal view
+     */
+    private SlackModalView buildDeleteLeaveModalWithThread(String userId, String channelId, String threadTs, List<LeaveDto> activeLeaves) {
+        // Convert leaves to Slack options
+        List<SlackOption> leaveOptions = activeLeaves.stream()
+                .map(leave -> {
+                    String label = formatLeaveForSelection(leave);
+                    String value = leave.getId().toString();
+                    return SlackOption.of(label, value);
+                })
+                .collect(Collectors.toList());
+
+        List<Object> blocks = new java.util.ArrayList<>();
+
+        // Add leave selection dropdown
+        blocks.add(SlackBlockBuilder.staticSelectInput(
+                "leave_select_block",
+                "leave_select_action",
+                "Select Leave to Delete",
+                leaveOptions,
+                "Choose a leave request to delete",
+                null // no initial selection
+        ));
+
+        // Create JSON metadata with thread context
+        String metadataJson = SlackMetadataUtil.createMetadata(
+                userId,
+                channelId,
+                "", // channel name not available
+                threadTs  // Include thread timestamp for posting result in thread
+        );
+
+        return SlackModalBuilder.create("Delete Leave Request", "delete_leave_submit")
+                .withBlocks(blocks)
+                .withPrivateMetadata(metadataJson)
+                .build();
+    }
+
+    /**
+     * Posts "no leaves available" message to thread.
+     *
+     * @param channelId The channel ID
+     * @param threadTs  The thread timestamp
+     * @param userTag   The user tag
+     */
+    private void postNoLeavesAvailableToThread(String channelId, String threadTs, String userTag) {
+        try {
+            SlackMessageRequest message = SlackMessageTemplate.noLeavesAvailable(
+                    channelId, threadTs, userTag
+            );
+            slackApiClient.postThreadReply(channelId, threadTs, message);
+            log.info("Posted no leaves available message to thread");
+        } catch (Exception e) {
+            log.error("Failed to post no leaves available message", e);
+        }
+    }
+
+    /**
+     * Posts error message to thread.
+     *
+     * @param channelId    The channel ID
+     * @param userTag      The user tag
+     * @param errorMessage The error message
+     */
+    private void postDeleteLeaveErrorToThread(String channelId, String userTag, String errorMessage) {
+        try {
+            SlackMessageRequest message = SlackMessageTemplate.deleteLeaveError(
+                    channelId, null, userTag, errorMessage
+            );
+            slackApiClient.postMessage(channelId, message);
+            log.info("Posted error message to channel");
+        } catch (Exception e) {
+            log.error("Failed to post error message", e);
+        }
+    }
+
+    /**
+     * Formats a leave DTO into a human-readable string for the selection dropdown.
+     *
+     * @param leave The leave DTO
+     * @return Formatted string (e.g., "2024-01-15 to 2024-01-20 - ANNUAL_LEAVE - APPROVED")
+     */
+    private String formatLeaveForSelection(LeaveDto leave) {
+        // Format dates as "Jan 15" or "Jan 15-20"
+        String dateStr;
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd");
+
+        if (leave.getStartDate().equals(leave.getEndDate())) {
+            // Single day: "Jan 15"
+            dateStr = leave.getStartDate().format(formatter);
+        } else {
+            // Date range: "Jan 15-20"
+            dateStr = String.format("%s-%s",
+                    leave.getStartDate().format(formatter),
+                    leave.getEndDate().format(formatter));
+        }
+
+        // Calculate duration in days
+        long days = java.time.temporal.ChronoUnit.DAYS.between(
+                leave.getStartDate(),
+                leave.getEndDate()
+        ) + 1; // +1 because both start and end dates are inclusive
+
+        // Convert enum to friendly text
+        String leaveType = formatLeaveTypeFriendly(leave.getType().toString());
+
+        // Format: "Jan 15-20 (6 days): Annual Leave"
+        return String.format("%s (%d day%s): %s",
+                dateStr,
+                days,
+                days == 1 ? "" : "s",
+                leaveType
+        );
+    }
+
+    /**
+     * Converts leave type enum to friendly text.
+     *
+     * @param leaveType The leave type enum name (e.g., "ANNUAL_LEAVE")
+     * @return Friendly text (e.g., "Annual Leave")
+     */
+    private String formatLeaveTypeFriendly(String leaveType) {
+        // Convert ANNUAL_LEAVE -> Annual Leave
+        // Or just capitalize first letter and lowercase rest
+        if (leaveType == null || leaveType.isEmpty()) {
+            return "Leave";
+        }
+
+        // Handle snake_case: ANNUAL_LEAVE -> Annual Leave
+        String[] parts = leaveType.split("_");
+        StringBuilder result = new StringBuilder();
+
+        for (String part : parts) {
+            if (result.length() > 0) {
+                result.append(" ");
+            }
+            result.append(part.charAt(0))
+                  .append(part.substring(1).toLowerCase());
+        }
+
+        return result.toString();
+    }
+
+    /**
+     * Handles the delete leave modal submission.
+     * <p>
+     * This method:
+     * 1. Extracts the selected leave ID from modal state
+     * 2. Validates that leave exists and belongs to user
+     * 3. Performs soft delete (updates status to DEACTIVATED)
+     * 4. Posts success/failure message to thread
+     * <p>
+     * Called from handleViewSubmission when callback_id is "delete_leave_submit".
+     *
+     * @param submissionRequest The view submission request
+     */
+    public void handleDeleteLeaveSubmission(SlackViewSubmissionRequest submissionRequest) {
+        log.info("Handling delete leave submission from user: {}",
+                submissionRequest.getUser().getId());
+
+        // Extract metadata
+        String metadataJson = submissionRequest.getView().getPrivateMetadata();
+        String slackUserId = SlackMetadataUtil.extractUserId(metadataJson);
+        String channelId = SlackMetadataUtil.extractChannelId(metadataJson);
+        String threadTs = SlackMetadataUtil.extractThreadTs(metadataJson);
+
+        log.info("Extracted thread context - userId: {}, channelId: {}, threadTs: {}",
+                slackUserId, channelId, threadTs);
+
+        try {
+            // Get employee ID from Slack user ID
+            String employeeId = getEmployeeIdFromSlackUserId(slackUserId);
+
+            // Extract selected leave ID from modal state
+            String selectedLeaveId = extractSelectedLeaveId(submissionRequest);
+
+            if (selectedLeaveId == null || selectedLeaveId.isBlank()) {
+                throw new IllegalArgumentException("No leave selected");
+            }
+
+            UUID leaveId = UUID.fromString(selectedLeaveId);
+
+            // Perform soft delete (validates ownership)
+            LeaveDto deletedLeave = leaveService.softDeleteLeave(leaveId, employeeId);
+
+            log.info("Successfully soft deleted leave {} for user {}", leaveId, slackUserId);
+
+            // Post success message to thread
+            postDeleteLeaveSuccessMessage(channelId, threadTs, slackUserId, deletedLeave);
+
+        } catch (Exception e) {
+            log.error("Failed to delete leave for user: {}", slackUserId, e);
+            // Post error message to thread
+            postDeleteLeaveFailureMessage(channelId, threadTs, slackUserId, e.getMessage());
+        }
+    }
+
+    /**
+     * Extracts the selected leave ID from the view submission state.
+     *
+     * @param submissionRequest The view submission request
+     * @return The selected leave ID, or null if not found
+     */
+    private String extractSelectedLeaveId(SlackViewSubmissionRequest submissionRequest) {
+        try {
+            SlackViewState state = submissionRequest.getView().getState();
+            if (state != null && state.getValues() != null) {
+                Map<String, Map<String, SlackBlockActionValue>> values = state.getValues();
+                if (values.containsKey("leave_select_block")) {
+                    Map<String, SlackBlockActionValue> blockValues = values.get("leave_select_block");
+                    if (blockValues.containsKey("leave_select_action")) {
+                        SlackBlockActionValue actionValue = blockValues.get("leave_select_action");
+                        if (actionValue != null && actionValue.getSelectedOption() != null) {
+                            return actionValue.getSelectedOption().getValue();
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to extract selected leave ID from submission", e);
+        }
+        return null;
+    }
+
+    /**
+     * Posts a success message after leave deletion.
+     *
+     * @param channelId    The channel to post to
+     * @param threadTs     The thread timestamp for posting threaded replies
+     * @param userId       The Slack user ID
+     * @param deletedLeave The deleted leave details
+     */
+    private void postDeleteLeaveSuccessMessage(String channelId, String threadTs, String userId, LeaveDto deletedLeave) {
+        try {
+            String userTag = "<@" + userId + ">";
+            SlackMessageRequest message = SlackMessageTemplate.leaveDeleted(
+                    channelId,
+                    threadTs,
+                    userTag,
+                    deletedLeave
+            );
+            slackApiClient.postThreadReply(channelId, threadTs, message);
+            log.info("Posted delete success message to thread");
+        } catch (Exception e) {
+            log.error("Failed to post delete success message", e);
+        }
+    }
+
+    /**
+     * Posts a failure message after leave deletion fails.
+     *
+     * @param channelId    The channel to post to
+     * @param threadTs     The thread timestamp for posting threaded replies
+     * @param userId       The Slack user ID
+     * @param errorMessage The error message
+     */
+    private void postDeleteLeaveFailureMessage(String channelId, String threadTs, String userId, String errorMessage) {
+        try {
+            String userTag = "<@" + userId + ">";
+            SlackMessageRequest message = SlackMessageTemplate.leaveDeleteFailed(
+                    channelId,
+                    threadTs,
+                    userTag,
+                    errorMessage
+            );
+            slackApiClient.postThreadReply(channelId, threadTs, message);
+            log.info("Posted delete failure message to thread");
+        } catch (Exception e) {
+            log.error("Failed to post delete failure message", e);
+        }
     }
 }

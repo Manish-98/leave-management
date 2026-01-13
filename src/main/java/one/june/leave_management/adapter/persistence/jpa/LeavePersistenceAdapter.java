@@ -170,4 +170,13 @@ public class LeavePersistenceAdapter implements LeaveRepository {
 
         return leaveJpaRepository.countApprovedOptionalHolidaysByUserAndYear(userId, yearStart, yearEnd);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Leave> findActiveLeavesByUserId(String userId) {
+        logger.debug("Finding active leaves for user {}", userId);
+        return leaveJpaRepository.findActiveLeavesByUserId(userId).stream()
+                .map(leaveMapper::toDomainEntity)
+                .collect(Collectors.toList());
+    }
 }
